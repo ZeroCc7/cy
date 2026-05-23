@@ -1,0 +1,21 @@
+# 环境变量（含密钥，绝不提交）
+.env
+
+# 虚拟环境
+venv/
+
+# Python 缓存
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# 生成的剧本输出
+scripts/
+
+# 系统文件
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
