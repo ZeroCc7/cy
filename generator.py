@@ -15,6 +15,8 @@ MODEL = os.environ["OPENAI_MODEL_ID"]
 def stream_print(response) -> str:
     full_text = ""
     for chunk in response:
+        if not chunk.choices:
+            continue
         text = chunk.choices[0].delta.content or ""
         print(text, end="", flush=True)
         full_text += text
