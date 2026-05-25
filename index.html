@@ -250,7 +250,6 @@ textarea:disabled{opacity:.4}
 </style>
 </head>
 <body>
-<div id="home-view" style="display:none;flex-direction:column;height:100vh;background:#0f0f13"></div>
 <header>
   <button class="hdr-btn" id="back-home-btn" onclick="goto('#/')" style="display:none">← 首页</button>
   <h1>✦ 短视频剧本生成器</h1>
@@ -273,6 +272,7 @@ textarea:disabled{opacity:.4}
   </button>
 </header>
 
+<div id="home-view" style="display:none;flex-direction:column;flex:1;overflow:hidden;background:#0f0f13"></div>
 <div class="layout">
   <!-- ── Chat ── -->
   <div class="chat-panel">
