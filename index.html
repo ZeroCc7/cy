@@ -357,6 +357,48 @@ const S = {
   pendingAction:null,
 };
 
+// ── Router ──────────────────────────────────────────────────────────────────
+
+function goto(hash) {
+  location.hash = hash;
+}
+
+function showHomeView() {
+  $('home-view').style.display      = 'flex';
+  document.querySelector('.layout').style.display = 'none';
+  $('step-bar').style.display       = 'none';
+  $('back-home-btn').style.display  = 'none';
+  $('history-btn').style.display    = 'none';
+  $('new-proj-btn').style.display   = '';
+}
+
+function showCreationView() {
+  $('home-view').style.display      = 'none';
+  document.querySelector('.layout').style.display = 'flex';
+  $('step-bar').style.display       = '';
+  $('back-home-btn').style.display  = '';
+  $('history-btn').style.display    = '';
+  $('new-proj-btn').style.display   = 'none';
+}
+
+async function router() {
+  const hash = location.hash || '#/';
+  if (hash === '#/' || hash === '') {
+    showHomeView();
+    await loadHome();
+  } else if (hash === '#/project/new') {
+    showCreationView();
+    initNewProject();
+  } else if (hash.startsWith('#/project/')) {
+    const pid = hash.replace('#/project/', '');
+    showCreationView();
+    await loadProject(pid);
+  }
+}
+
+window.addEventListener('hashchange', router);
+window.addEventListener('load', router);
+
 const $ = id => document.getElementById(id);
 const $input   = () => $('input');
 const $sendBtn = () => $('send-btn');
