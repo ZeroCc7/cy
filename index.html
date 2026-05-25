@@ -17,7 +17,8 @@ header h1{font-size:15px;font-weight:600;color:#c9a96e;letter-spacing:.05em;whit
 .step{padding:4px 10px;border-radius:20px;font-size:11.5px;border:1px solid #2a2a38;
   color:#555;transition:all .3s;white-space:nowrap}
 .step.active{background:#c9a96e22;border-color:#c9a96e;color:#c9a96e;font-weight:600}
-.step.done{background:#1e2a1e;border-color:#3a6a3a;color:#6ab06a}
+.step.done{background:#1e2a1e;border-color:#3a6a3a;color:#6ab06a;cursor:pointer}
+.step.done:hover{background:#243024;border-color:#4a8a4a}
 .step-arrow{color:#2a2a38;font-size:10px}
 .hdr-btn{display:flex;align-items:center;gap:5px;padding:5px 11px;border-radius:8px;
   border:1px solid #2a2a38;background:transparent;color:#777;font-size:12px;
@@ -221,12 +222,39 @@ textarea:disabled{opacity:.4}
 
 /* 空历史 */
 .h-list-empty{padding:24px 12px;text-align:center;color:#383848;font-size:12.5px;line-height:1.8}
+
+.primary-hdr-btn{background:#c9a96e;color:#1a1208;border-color:#c9a96e;font-weight:600}
+.primary-hdr-btn:hover{background:#d4b87a}
+
+.home-body{flex:1;overflow-y:auto;padding:28px 32px}
+.home-body::-webkit-scrollbar{width:3px}
+.home-body::-webkit-scrollbar-thumb{background:#1e1e2a}
+.home-section-title{font-size:13px;color:#555;margin-bottom:14px}
+.proj-grid-home{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:11px}
+.proj-card-home{background:#111120;border:1px solid #1e1e2c;border-radius:11px;
+  padding:14px 16px;cursor:pointer;transition:all .18s}
+.proj-card-home:hover{border-color:#c9a96e44;background:#17172a}
+.pch-title{font-size:14px;color:#c9a96e;font-weight:600;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:8px}
+.pch-meta{display:flex;gap:6px;align-items:center;margin-bottom:10px}
+.pch-progress{font-size:11px;color:#4a6a4a}
+.pch-footer{display:flex;align-items:center;justify-content:space-between}
+.pch-time{font-size:11px;color:#383848}
+.pch-delete{background:none;border:none;color:#2a2a3a;font-size:18px;
+  cursor:pointer;padding:0 4px;border-radius:4px;line-height:1;transition:color .15s}
+.pch-delete:hover{color:#c06060}
+.home-empty{display:flex;flex-direction:column;align-items:center;
+  justify-content:center;height:60vh;gap:12px}
+.home-empty p{font-size:14px;color:#3a3a50}
+.home-empty small{font-size:12px;color:#252535}
 </style>
 </head>
 <body>
+<div id="home-view" style="display:none;flex-direction:column;height:100vh;background:#0f0f13"></div>
 <header>
+  <button class="hdr-btn" id="back-home-btn" onclick="goto('#/')" style="display:none">← 首页</button>
   <h1>✦ 短视频剧本生成器</h1>
-  <div class="step-bar">
+  <div class="step-bar" id="step-bar">
     <div class="step active" id="s1">① 聊需求</div>
     <span class="step-arrow">›</span>
     <div class="step" id="s2">② 世界观</div>
@@ -235,6 +263,7 @@ textarea:disabled{opacity:.4}
     <span class="step-arrow">›</span>
     <div class="step" id="s4">④ 剧本</div>
   </div>
+  <button class="hdr-btn primary-hdr-btn" id="new-proj-btn" onclick="goto('#/project/new')" style="display:none">+ 新建剧本</button>
   <button class="hdr-btn" id="history-btn" onclick="toggleHistory()">
     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
       <polyline points="12 8 12 12 14 14"/>
@@ -331,11 +360,6 @@ const S = {
 const $ = id => document.getElementById(id);
 const $input   = () => $('input');
 const $sendBtn = () => $('send-btn');
-
-window.onload = () => {
-  appendMsg('assistant','你好！我是你的短视频剧本助手，专注古装/玄幻类型 ✨\n\n先聊聊你想要什么样的故事——\n\n你的主角是什么人？有什么特别的身份或能力？');
-  $input().focus();
-};
 
 $input().addEventListener('keydown', e => {
   if (e.key==='Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); }
@@ -491,11 +515,33 @@ async function startWorldbuilding() {
   appendMsg('assistant','世界观设定完成！可以直接生成大纲，或告诉我需要修改的地方。');
 }
 function showWorldbuildingActions() {
+  const hasOutline = !!S.outline;
+  const hasEpisodes = S.outline && (S.phase==='episodes' || Object.keys(S.episodes).length>0);
+  const forwardChip = hasEpisodes
+    ? {label:'→ 返回剧本列表', cls:'primary', fn:backToEpisodes}
+    : hasOutline
+      ? {label:'→ 返回大纲',    cls:'primary', fn:backToOutline}
+      : {label:'继续生成大纲 →',cls:'primary', fn:startOutline};
   setChips([
-    {label:'继续生成大纲 →',cls:'primary',fn:startOutline},
+    forwardChip,
     {label:'修改世界观',fn:()=>enterRefineMode({type:'worldbuilding'},'📝 修改世界观')},
+    {label:'重新生成世界观',fn:startWorldbuilding},
   ]);
   setToolbar([{label:'修改世界观',fn:()=>enterRefineMode({type:'worldbuilding'},'📝 修改世界观')}]);
+}
+
+function backToWorldbuilding() {
+  setStep(2);
+  $('ctitle').textContent='世界观设定';
+  $('cbody').innerHTML=`<div class="rendered">${md(S.worldbuilding)}</div>`;
+  showWorldbuildingActions();
+}
+
+function backToOutline() {
+  setStep(3);
+  $('ctitle').textContent=`故事大纲 · ${S.episodeCount} 集`;
+  $('cbody').innerHTML=`<div class="rendered">${md(S.outline)}</div>`;
+  showOutlineActions();
 }
 
 // ── Phase 2→3 大纲 ──
@@ -518,14 +564,20 @@ async function startOutline() {
   appendMsg('assistant','大纲已生成！满意就继续，或者告诉我需要调整的地方。');
 }
 function showOutlineActions() {
+  const hasEpisodes = S.phase==='episodes' || Object.keys(S.episodes).length>0;
+  const forwardChip = hasEpisodes
+    ? {label:'→ 返回剧本列表', cls:'primary', fn:backToEpisodes}
+    : {label:'继续生成剧本 →', cls:'primary', fn:startEpisodes};
   setChips([
-    {label:'继续生成剧本 →',cls:'primary',fn:startEpisodes},
+    forwardChip,
     {label:'修改大纲',fn:()=>enterRefineMode({type:'outline'},'📝 修改大纲')},
-    {label:'重新生成',fn:startOutline},
+    {label:'重新生成大纲',fn:startOutline},
+    {label:'← 修改世界观',fn:backToWorldbuilding},
   ]);
   setToolbar([
     {label:'修改大纲',fn:()=>enterRefineMode({type:'outline'},'📝 修改大纲')},
-    {label:'重新生成',fn:startOutline},
+    {label:'重新生成大纲',fn:startOutline},
+    {label:'← 修改世界观',fn:backToWorldbuilding},
   ]);
 }
 
@@ -537,6 +589,8 @@ function startEpisodes() {
   setToolbar([
     {label:'全部自动生成',fn:generateAll},
     {label:'导出剧本文件',fn:exportProject},
+    {label:'← 修改大纲',fn:backToOutline},
+    {label:'← 修改世界观',fn:backToWorldbuilding},
   ]);
   appendMsg('assistant',`大纲就绪！点右侧卡片逐集生成，或「全部自动生成」一键完成全部 ${S.episodeCount} 集。`);
 }
@@ -614,6 +668,8 @@ function backToGrid() {
   setToolbar([
     {label:'全部自动生成',fn:generateAll},
     {label:'导出剧本文件',fn:exportProject},
+    {label:'← 修改大纲',fn:backToOutline},
+    {label:'← 修改世界观',fn:backToWorldbuilding},
   ]);
 }
 
@@ -671,6 +727,22 @@ function setStep(n) {
   ['s1','s2','s3','s4'].forEach((id,i)=>{
     $(id).className='step'+(i+1<n?' done':i+1===n?' active':'');
   });
+  // 已完成的步骤可点击跳回
+  $(  's2').onclick = S.worldbuilding ? backToWorldbuilding : null;
+  $('s3').onclick = S.outline        ? backToOutline       : null;
+  $('s4').onclick = S.outline && (S.phase==='episodes'||Object.keys(S.episodes).length) ? backToEpisodes : null;
+}
+
+function backToEpisodes() {
+  setStep(4);
+  $('ctitle').textContent=`分集剧本 · 共 ${S.episodeCount} 集`;
+  renderEpisodeGrid();
+  setToolbar([
+    {label:'全部自动生成',fn:generateAll},
+    {label:'导出剧本文件',fn:exportProject},
+    {label:'← 修改大纲',fn:backToOutline},
+    {label:'← 修改世界观',fn:backToWorldbuilding},
+  ]);
 }
 
 // ── Project 存档 ──
@@ -956,15 +1028,125 @@ async function submitHistoryRefine() {
     r.appendChild(saveOk);
 
     const editBtn=document.createElement('button');
-    editBtn.className='chip'; editBtn.style.cssText='margin-top:10px;display:block';
+    editBtn.className='chip'; editBtn.style.cssText='margin-top:10px;display:inline-block';
     editBtn.textContent='继续修改'; editBtn.onclick=openHistoryRefine;
     r.appendChild(editBtn);
+
+    // 世界观修改后：提供重新生成大纲
+    if(H.section==='worldbuilding' && H.project.requirements) {
+      const regenBtn=document.createElement('button');
+      regenBtn.className='chip primary'; regenBtn.style.cssText='margin-top:10px;margin-left:6px;display:inline-block';
+      regenBtn.textContent='→ 重新生成大纲'; regenBtn.onclick=historyRegenOutline;
+      r.appendChild(regenBtn);
+    }
+    // 大纲修改后：提供重新生成某集
+    if(H.section==='outline') {
+      const regenBtn=document.createElement('button');
+      regenBtn.className='chip primary'; regenBtn.style.cssText='margin-top:10px;margin-left:6px;display:inline-block';
+      regenBtn.textContent='→ 重新生成剧本集'; regenBtn.onclick=()=>showHistoryEpPicker();
+      r.appendChild(regenBtn);
+    }
   } catch {
     const fail=document.createElement('p');
     fail.style.cssText='font-size:11px;color:#8a4a4a;margin-top:10px';
     fail.textContent='⚠ 保存失败';
     r.appendChild(fail);
   }
+}
+
+// ── 历史面板：重新生成大纲 ──
+async function historyRegenOutline() {
+  if(!H.project) return;
+  $('h-content').innerHTML='<div class="rendered" id="h-render"></div>';
+  const r=$('h-render');
+  r.innerHTML='<p style="color:#777;font-size:13px">正在重新生成大纲…<span class="typing-cursor"></span></p>';
+
+  const ctx=`${H.project.requirements||''}\n\n【已确认的世界观设定】\n${H.project.worldbuilding||''}`;
+  let raw='', started=false;
+  try {
+    raw=await streamPost('/api/outline',{
+      requirements:H.project.requirements||'',
+      worldbuilding:H.project.worldbuilding||'',
+      episode_count:H.project.episodeCount||15,
+    },c=>{
+      if(!started){r.innerHTML='';started=true;}
+      raw+=c; r.innerHTML=md(raw)+'<span class="typing-cursor"></span>';
+      $('h-content').scrollTop=$('h-content').scrollHeight;
+    });
+  } catch { r.innerHTML='<div class="h-empty">生成失败</div>'; return; }
+
+  r.innerHTML=md(raw);
+  H.project.outline=raw; H.sectionContent=raw;
+  try {
+    await fetch(`/api/project/${H.project.id}`,{method:'PATCH',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({field:'outline',content:raw})});
+    const ok=document.createElement('p');
+    ok.style.cssText='font-size:11px;color:#4a8a4a;margin-top:10px';
+    ok.textContent='✓ 大纲已重新生成并保存';
+    r.appendChild(ok);
+  } catch {}
+}
+
+// ── 历史面板：选集重新生成 ──
+function showHistoryEpPicker() {
+  const count=H.project.episodeCount||15;
+  $('h-content').innerHTML='<div style="padding:16px"><p style="font-size:13px;color:#aaa;margin-bottom:10px">选择要重新生成的集数：</p><div id="h-ep-picker" style="display:flex;flex-wrap:wrap;gap:7px"></div></div>';
+  const picker=$('h-ep-picker');
+  for(let i=1;i<=count;i++) {
+    const btn=document.createElement('button');
+    btn.className='chip'; btn.textContent=`第${i}集`;
+    btn.onclick=()=>historyRegenEpisode(i);
+    picker.appendChild(btn);
+  }
+}
+
+async function historyRegenEpisode(num) {
+  if(!H.project) return;
+  $('h-content').innerHTML='<div class="rendered" id="h-render"></div>';
+  const r=$('h-render');
+  r.innerHTML=`<p style="color:#777;font-size:13px">正在重新生成第 ${num} 集…<span class="typing-cursor"></span></p>`;
+
+  const ol=H.project.outline||'';
+  const epList=extractEpOutlinesFromText(ol);
+  const epOl=epList[num-1]||`第${num}集`;
+  const wpm=200;
+
+  let raw='', started=false;
+  try {
+    raw=await streamPost('/api/episode',{
+      outline:ol, episode_num:num,
+    },c=>{
+      if(!started){r.innerHTML='';started=true;}
+      raw+=c; r.innerHTML=md(raw)+'<span class="typing-cursor"></span>';
+      $('h-content').scrollTop=$('h-content').scrollHeight;
+    });
+  } catch { r.innerHTML='<div class="h-empty">生成失败</div>'; return; }
+
+  r.innerHTML=md(raw);
+  H.project.episodes=H.project.episodes||{};
+  H.project.episodes[String(num)]=raw;
+  try {
+    await fetch(`/api/project/${H.project.id}`,{method:'PATCH',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({field:'episode',num,content:raw})});
+    const ok=document.createElement('p');
+    ok.style.cssText='font-size:11px;color:#4a8a4a;margin-top:10px';
+    ok.textContent=`✓ 第 ${num} 集已重新生成并保存`;
+    r.appendChild(ok);
+    const more=document.createElement('button');
+    more.className='chip'; more.style.cssText='margin-top:8px;display:block';
+    more.textContent='继续选集'; more.onclick=showHistoryEpPicker;
+    r.appendChild(more);
+  } catch {}
+}
+
+function extractEpOutlinesFromText(outline) {
+  const pattern=/\*\*第(\d+)集[^*]*\*\*/g;
+  const parts=outline.split(pattern);
+  const result=[];
+  for(let i=1;i<parts.length;i+=2) result.push(`第${parts[i]}集 ${parts[i+1]||''}`);
+  return result;
 }
 
 // ══════════════════════════════════════════════════════════════════
