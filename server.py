@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import StreamingResponse, FileResponse, JSONResponse
 from openai import OpenAI
+from supabase import create_client, Client
 from exporter import save_full_script, extract_episode_outlines
 from prompts import (OUTLINE_SYSTEM, OUTLINE_PROMPT, EPISODE_SYSTEM, EPISODE_PROMPT,
                      REFINE_PROMPT, WORLDBUILDING_SYSTEM, WORLDBUILDING_PROMPT)
@@ -17,9 +18,13 @@ client = OpenAI(
     api_key=os.environ["OPENAI_API_KEY"],
     base_url=os.environ["OPENAI_BASE_URL"],
 )
-MODEL        = os.environ["OPENAI_MODEL_ID"]
-PROJECT_DIR  = "./projects"
-EXPORT_DIR   = "./scripts"
+MODEL      = os.environ["OPENAI_MODEL_ID"]
+EXPORT_DIR = "./scripts"
+
+db: Client = create_client(
+    os.environ["SUPABASE_URL"],
+    os.environ["SUPABASE_SECRET_KEY"],
+)
 
 app = FastAPI()
 
@@ -118,34 +123,53 @@ async def refine(req: Request):
 
 # ── Project CRUD ──────────────────────────────────────────────────────────────
 
-def _proj_path(pid: str) -> Path:
-    if ".." in pid or "/" in pid:
-        raise HTTPException(400, "非法项目ID")
-    return Path(PROJECT_DIR) / f"{pid}.json"
+def _row_to_proj(row: dict) -> dict:
+    return {
+        "id":           row["id"],
+        "title":        row.get("title", "未命名"),
+        "phase":        row.get("phase", "chat"),
+        "requirements": row.get("requirements") or "",
+        "worldbuilding":row.get("worldbuilding") or "",
+        "outline":      row.get("outline") or "",
+        "episodeCount": row.get("episode_count", 15),
+        "episodesDone": row.get("episodes_done", 0),
+        "messages":     row.get("messages") or [],
+        "episodes":     row.get("episodes") or {},
+        "created":      row.get("created", ""),
+        "updated":      row.get("updated", ""),
+    }
 
 
 def _load_proj(pid: str) -> dict:
-    p = _proj_path(pid)
-    if not p.exists():
+    res = db.table("projects").select("*").eq("id", pid).maybe_single().execute()
+    if not res.data:
         raise HTTPException(404, "项目不存在")
-    return json.loads(p.read_text(encoding="utf-8"))
+    return _row_to_proj(res.data)
 
 
 def _save_proj(data: dict) -> str:
-    Path(PROJECT_DIR).mkdir(exist_ok=True)
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
     pid = data.get("id") or datetime.now().strftime("%Y%m%d_%H%M%S")
-    data["id"] = pid
-    data.setdefault("created", now)
-    data["updated"] = now
-    data["episodesDone"] = len(data.get("episodes", {}))
-    _proj_path(pid).write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    episodes_done = len(data.get("episodes", {}))
+    db.table("projects").upsert({
+        "id":            pid,
+        "title":         data.get("title", "未命名"),
+        "phase":         data.get("phase", "chat"),
+        "requirements":  data.get("requirements", ""),
+        "worldbuilding": data.get("worldbuilding", ""),
+        "outline":       data.get("outline", ""),
+        "episode_count": data.get("episodeCount", 15),
+        "episodes_done": episodes_done,
+        "messages":      data.get("messages", []),
+        "episodes":      data.get("episodes", {}),
+        "created":       data.get("created") or now,
+        "updated":       now,
+    }).execute()
     return pid
 
 
 @app.post("/api/project")
 async def project_save(req: Request):
-    """全量保存（创作流程中调用）。"""
     body = await req.json()
     pid  = _save_proj(body)
     return {"id": pid}
@@ -153,52 +177,56 @@ async def project_save(req: Request):
 
 @app.get("/api/projects")
 async def projects_list():
-    """返回所有项目的摘要（不含 messages/episodes 内容）。"""
-    d = Path(PROJECT_DIR)
-    if not d.exists():
-        return JSONResponse([])
-    result = []
-    for f in sorted(d.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True):
-        try:
-            data = json.loads(f.read_text(encoding="utf-8"))
-            result.append({
-                "id":           data["id"],
-                "title":        data.get("title", "未命名"),
-                "phase":        data.get("phase", "chat"),
-                "updated":      data.get("updated", ""),
-                "created":      data.get("created", ""),
-                "episodeCount": data.get("episodeCount", 0),
-                "episodesDone": len(data.get("episodes", {})),
-            })
-        except Exception:
-            pass
-    return JSONResponse(result)
+    res = db.table("projects").select(
+        "id,title,phase,episode_count,episodes_done,created,updated"
+    ).order("updated", desc=True).execute()
+    return JSONResponse([{
+        "id":           r["id"],
+        "title":        r.get("title", "未命名"),
+        "phase":        r.get("phase", "chat"),
+        "updated":      r.get("updated", ""),
+        "created":      r.get("created", ""),
+        "episodeCount": r.get("episode_count", 0),
+        "episodesDone": r.get("episodes_done", 0),
+    } for r in (res.data or [])])
 
 
 @app.get("/api/project/{pid}")
 async def project_load(pid: str):
-    """加载完整项目（含 messages/episodes）。"""
     return JSONResponse(_load_proj(pid))
 
 
 @app.patch("/api/project/{pid}")
 async def project_patch(pid: str, req: Request):
-    """局部更新：修改世界观/大纲/某集/对话记录。"""
-    data  = _load_proj(pid)
     body  = await req.json()
     field = body.get("field")
+    now   = datetime.now().strftime("%Y-%m-%d %H:%M")
+
     if field == "worldbuilding":
-        data["worldbuilding"] = body["content"]
+        db.table("projects").update({"worldbuilding": body["content"], "updated": now}).eq("id", pid).execute()
     elif field == "outline":
-        data["outline"] = body["content"]
+        db.table("projects").update({"outline": body["content"], "updated": now}).eq("id", pid).execute()
     elif field == "episode":
-        data.setdefault("episodes", {})[str(body["num"])] = body["content"]
-        data["episodesDone"] = len(data["episodes"])
+        res = db.table("projects").select("episodes").eq("id", pid).maybe_single().execute()
+        if not res.data:
+            raise HTTPException(404, "项目不存在")
+        episodes = res.data.get("episodes") or {}
+        episodes[str(body["num"])] = body["content"]
+        db.table("projects").update({
+            "episodes":      episodes,
+            "episodes_done": len(episodes),
+            "updated":       now,
+        }).eq("id", pid).execute()
     elif field == "chat":
-        data["messages"] = body["messages"]
+        db.table("projects").update({"messages": body["messages"], "updated": now}).eq("id", pid).execute()
     else:
         raise HTTPException(400, f"未知 field: {field}")
-    _save_proj(data)
+    return {"ok": True}
+
+
+@app.delete("/api/project/{pid}")
+async def project_delete(pid: str):
+    db.table("projects").delete().eq("id", pid).execute()
     return {"ok": True}
 
 
@@ -206,7 +234,6 @@ async def project_patch(pid: str, req: Request):
 
 @app.post("/api/export/{pid}")
 async def project_export(pid: str):
-    """将项目内容导出为 scripts/ 下的 Markdown 文件。"""
     data     = _load_proj(pid)
     episodes = [data["episodes"][str(k)] for k in sorted(int(x) for x in data.get("episodes", {}))]
     Path(EXPORT_DIR).mkdir(exist_ok=True)
