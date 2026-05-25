@@ -4,16 +4,143 @@
 
 ## 快速开始
 
+### macOS / Linux
+
 ```bash
+# 0. 创建虚拟环境（首次运行需要）
+python3 -m venv venv
+
 # 1. 激活虚拟环境
 source venv/bin/activate
 
-# 2. 设置 API Key
+# 2. 安装依赖
+pip install -r requirements.txt
+
+# 3. 设置 API Key
 export ANTHROPIC_API_KEY=你的密钥
 
-# 3. 运行
+# 4. 运行
 python main.py
 ```
+
+### Windows
+
+**PowerShell：**
+
+```powershell
+# 0. 创建虚拟环境（首次运行需要）
+python -m venv venv
+
+# 1. 激活虚拟环境
+.\venv\Scripts\Activate.ps1
+
+# 2. 安装依赖
+pip install -r requirements.txt
+
+# 3. 设置 API Key
+$env:ANTHROPIC_API_KEY="你的密钥"
+
+# 4. 运行
+python main.py
+```
+
+> 如果遇到执行策略限制，先运行：`Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned`
+
+**CMD：**
+
+```cmd
+:: 0. 创建虚拟环境（首次运行需要）
+python -m venv venv
+
+:: 1. 激活虚拟环境
+venv\Scripts\activate.bat
+
+:: 2. 安装依赖
+pip install -r requirements.txt
+
+:: 3. 设置 API Key
+set ANTHROPIC_API_KEY=你的密钥
+
+:: 4. 运行
+python main.py
+```
+
+## 启动 Web 界面
+
+项目提供 Web 可视化操作界面，相比 `main.py` 命令行模式更直观。
+
+### macOS / Linux
+
+```bash
+# 0. 创建虚拟环境（首次运行需要）
+python3 -m venv venv
+
+# 1. 激活虚拟环境
+source venv/bin/activate
+
+# 2. 安装依赖
+pip install -r requirements.txt
+
+# 3. 配置环境变量（参考 .env 文件）
+export OPENAI_API_KEY=你的密钥
+export OPENAI_BASE_URL=你的API地址
+export OPENAI_MODEL_ID=模型ID
+
+# 4. 启动服务
+uvicorn server:app --reload
+```
+
+浏览器打开 http://127.0.0.1:8000
+
+### Windows
+
+**PowerShell：**
+
+```powershell
+# 0. 创建虚拟环境（首次运行需要）
+python -m venv venv
+
+# 1. 激活虚拟环境
+.\venv\Scripts\Activate.ps1
+
+# 2. 安装依赖
+pip install -r requirements.txt
+
+# 3. 配置环境变量（参考 .env 文件）
+$env:OPENAI_API_KEY="你的密钥"
+$env:OPENAI_BASE_URL="你的API地址"
+$env:OPENAI_MODEL_ID="模型ID"
+
+# 4. 启动服务
+uvicorn server:app --reload
+```
+
+浏览器打开 http://127.0.0.1:8000
+
+> 如果遇到执行策略限制，先运行：`Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned`
+
+**CMD：**
+
+```cmd
+:: 0. 创建虚拟环境（首次运行需要）
+python -m venv venv
+
+:: 1. 激活虚拟环境
+venv\Scripts\activate.bat
+
+:: 2. 安装依赖
+pip install -r requirements.txt
+
+:: 3. 配置环境变量（参考 .env 文件）
+set OPENAI_API_KEY=你的密钥
+set OPENAI_BASE_URL=你的API地址
+set OPENAI_MODEL_ID=模型ID
+
+:: 4. 启动服务
+uvicorn server:app --reload
+```
+
+浏览器打开 http://127.0.0.1:8000
 
 ## 工作流程
 
