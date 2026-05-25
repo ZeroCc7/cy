@@ -399,6 +399,48 @@ async function router() {
 window.addEventListener('hashchange', router);
 window.addEventListener('load', router);
 
+// ── Creation Page Init ───────────────────────────────────────────────────────
+
+function initNewProject() {
+  Object.assign(S, {
+    phase:'chat', projectId:null, messages:[], requirements:'',
+    worldbuilding:'', outline:'', episodeCount:15, episodes:{},
+    generating:false, pendingAction:null,
+  });
+  $('messages').innerHTML = '';
+  $('cbody').innerHTML = `
+    <div class="empty-state">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+        <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
+        <polyline points="14 2 14 8 20 8"/>
+        <line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>
+      </svg>
+      <p>和左侧 AI 描述你的故事想法</p>
+      <small>世界观 → 大纲 → 分集剧本，一条龙生成</small>
+    </div>`;
+  setChips([]); setToolbar([]);
+  $('refine-hint').style.display = 'none';
+  closeHistory();
+  setStep(1);
+  appendMsg('assistant',
+    '你好！我是你的短视频剧本助手，专注古装/玄幻类型 ✨\n\n先聊聊你想要什么样的故事——\n\n你的主角是什么人？有什么特别的身份或能力？');
+  $input().value = ''; $input().style.height = 'auto'; $input().focus();
+}
+
+async function loadProject(pid) {
+  $('messages').innerHTML = '';
+  $('cbody').innerHTML =
+    '<div class="empty-state"><p style="color:#555">加载中…</p></div>';
+  setStep(1);
+  try {
+    const resp = await fetch(`/api/project/${pid}`);
+    if (!resp.ok) throw new Error();
+    restoreProject(await resp.json());
+  } catch {
+    appendMsg('system', '项目加载失败，请返回首页重试');
+  }
+}
+
 // ── Home View ────────────────────────────────────────────────────────────────
 
 async function loadHome() {
