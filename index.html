@@ -224,7 +224,7 @@ textarea:disabled{opacity:.4}
 .h-list-empty{padding:24px 12px;text-align:center;color:#383848;font-size:12.5px;line-height:1.8}
 
 .primary-hdr-btn{background:#c9a96e;color:#1a1208;border-color:#c9a96e;font-weight:600}
-.primary-hdr-btn:hover{background:#d4b87a}
+.primary-hdr-btn:hover{background:#d4b87a;border-color:#d4b87a}
 
 .home-body{flex:1;overflow-y:auto;padding:28px 32px}
 .home-body::-webkit-scrollbar{width:3px}
@@ -728,7 +728,7 @@ function setStep(n) {
     $(id).className='step'+(i+1<n?' done':i+1===n?' active':'');
   });
   // 已完成的步骤可点击跳回
-  $(  's2').onclick = S.worldbuilding ? backToWorldbuilding : null;
+  $('s2').onclick = S.worldbuilding ? backToWorldbuilding : null;
   $('s3').onclick = S.outline        ? backToOutline       : null;
   $('s4').onclick = S.outline && (S.phase==='episodes'||Object.keys(S.episodes).length) ? backToEpisodes : null;
 }
@@ -1061,7 +1061,6 @@ async function historyRegenOutline() {
   const r=$('h-render');
   r.innerHTML='<p style="color:#777;font-size:13px">正在重新生成大纲…<span class="typing-cursor"></span></p>';
 
-  const ctx=`${H.project.requirements||''}\n\n【已确认的世界观设定】\n${H.project.worldbuilding||''}`;
   let raw='', started=false;
   try {
     raw=await streamPost('/api/outline',{
@@ -1108,10 +1107,6 @@ async function historyRegenEpisode(num) {
   r.innerHTML=`<p style="color:#777;font-size:13px">正在重新生成第 ${num} 集…<span class="typing-cursor"></span></p>`;
 
   const ol=H.project.outline||'';
-  const epList=extractEpOutlinesFromText(ol);
-  const epOl=epList[num-1]||`第${num}集`;
-  const wpm=200;
-
   let raw='', started=false;
   try {
     raw=await streamPost('/api/episode',{
