@@ -614,6 +614,18 @@ async function handleSend() {
   appendMsg('user',text);
   S.messages.push({role:'user',content:text});
   setLoading(true); setChips([]);
+  if (S.messages.length === 1 && !S.projectId) {
+    const tempTitle = text.replace(/\s+/g,'').slice(0,20) || '新故事';
+    try {
+      const r = await fetch('/api/project',{
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({title:tempTitle, phase:'chat', messages:S.messages}),
+      });
+      const {id} = await r.json();
+      S.projectId = id;
+      history.replaceState(null,'',`#/project/${id}`);
+    } catch { /* saveProject will handle it later */ }
+  }
   const b=appendStreamMsg('assistant'); let full='',started=false;
   try {
     full=await streamPost('/api/chat',{messages:S.messages},chunk=>{
