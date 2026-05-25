@@ -399,6 +399,73 @@ async function router() {
 window.addEventListener('hashchange', router);
 window.addEventListener('load', router);
 
+// ── Home View ────────────────────────────────────────────────────────────────
+
+async function loadHome() {
+  const hv = $('home-view');
+  hv.innerHTML = `<div class="home-body" id="home-body">
+    <div class="home-empty"><p>加载中…</p></div>
+  </div>`;
+  try {
+    const resp = await fetch('/api/projects');
+    const list = await resp.json();
+    renderHomeList(list);
+  } catch {
+    $('home-body').innerHTML =
+      '<div class="home-empty"><p>加载失败，请刷新重试</p></div>';
+  }
+}
+
+function renderHomeList(list) {
+  const body = $('home-body');
+  if (!list.length) {
+    body.innerHTML = `<div class="home-empty">
+      <p>还没有剧本项目</p>
+      <small>点击右上角「+ 新建剧本」开始创作</small>
+    </div>`;
+    return;
+  }
+  body.innerHTML = `
+    <div class="home-section-title">全部项目（${list.length} 个）</div>
+    <div class="proj-grid-home" id="proj-grid-home"></div>`;
+  const grid = $('proj-grid-home');
+  list.forEach(p => grid.appendChild(makeHomeCard(p)));
+}
+
+function makeHomeCard(p) {
+  const card = document.createElement('div');
+  card.className = 'proj-card-home';
+  card.id = `hcard-${p.id}`;
+  const progress = p.phase === 'episodes' && p.episodeCount
+    ? `${p.episodesDone}/${p.episodeCount} 集` : '';
+  card.innerHTML = `
+    <div class="pch-title">《${p.title}》</div>
+    <div class="pch-meta">
+      <span class="phase-badge ${p.phase}">${phaseLabel[p.phase] || p.phase}</span>
+      ${progress ? `<span class="pch-progress">${progress}</span>` : ''}
+    </div>
+    <div class="pch-footer">
+      <span class="pch-time">${p.updated || ''}</span>
+      <button class="pch-delete" title="删除项目"
+        onclick="deleteProject('${p.id}',event)">×</button>
+    </div>`;
+  card.onclick = () => goto(`#/project/${p.id}`);
+  return card;
+}
+
+async function deleteProject(id, event) {
+  event.stopPropagation();
+  if (!confirm('删除后无法恢复，确认删除此项目？')) return;
+  try {
+    await fetch(`/api/project/${id}`, { method: 'DELETE' });
+    $(`hcard-${id}`)?.remove();
+    const grid = $('proj-grid-home');
+    if (grid && grid.children.length === 0) renderHomeList([]);
+  } catch {
+    alert('删除失败，请重试');
+  }
+}
+
 const $ = id => document.getElementById(id);
 const $input   = () => $('input');
 const $sendBtn = () => $('send-btn');
