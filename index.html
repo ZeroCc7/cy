@@ -56,7 +56,7 @@ header h1{font-size:15px;font-weight:600;color:#c9a96e;letter-spacing:.05em;whit
 .input-row{display:flex;gap:7px;align-items:flex-end}
 textarea{flex:1;background:#161625;border:1px solid #232333;border-radius:11px;
   color:#e8e0d0;font-size:13.5px;font-family:inherit;padding:8px 12px;
-  resize:none;outline:none;line-height:1.5;max-height:110px;transition:border-color .2s}
+  resize:none;outline:none;line-height:1.5;max-height:40vh;transition:border-color .2s}
 textarea:focus{border-color:#c9a96e44}
 textarea::placeholder{color:#2e2e45}
 textarea:disabled{opacity:.4}
@@ -512,12 +512,9 @@ const $ = id => document.getElementById(id);
 const $input   = () => $('input');
 const $sendBtn = () => $('send-btn');
 
-$input().addEventListener('keydown', e => {
-  if (e.key==='Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); }
-});
 $input().addEventListener('input', () => {
   const el = $input(); el.style.height='auto';
-  el.style.height = Math.min(el.scrollHeight,110)+'px';
+  el.style.height = Math.min(el.scrollHeight, window.innerHeight * 0.4)+'px';
 });
 
 function setLoading(v) {
