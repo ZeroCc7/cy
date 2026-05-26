@@ -310,6 +310,10 @@ textarea:disabled{opacity:.4}
 .char-modal-close{background:none;border:none;color:#444;font-size:18px;
   cursor:pointer;padding:2px 7px;border-radius:4px;line-height:1}
 .char-modal-close:hover{color:#bbb;background:#1e1e2a}
+.char-reextract-btn{background:none;border:1px solid #2a2a38;color:#555;
+  font-size:11px;padding:3px 9px;border-radius:6px;cursor:pointer;transition:all .15s;margin-right:6px}
+.char-reextract-btn:hover{background:#1e1e2a;color:#c9a96e;border-color:#c9a96e44}
+.char-reextract-btn:disabled{opacity:.4;cursor:not-allowed}
 .char-modal-body{display:flex;gap:18px;padding:18px;overflow-y:auto;flex:1}
 .char-modal-left{width:150px;flex-shrink:0;display:flex;flex-direction:column;gap:8px}
 .char-modal-avatar{width:150px;height:200px;background:#1a1a2a;border-radius:9px;
@@ -1565,6 +1569,32 @@ async function saveCharModal() {
   await saveCharacters();
 }
 
+async function reextractChar() {
+  if (!_editingCharId || !S.projectId || !S.worldbuilding) return;
+  const btn = $('char-reextract-btn');
+  btn.disabled = true; btn.textContent = '提取中…';
+  const name = $('char-f-name').value.trim() || '未命名';
+  try {
+    const resp = await fetch(`/api/project/${S.projectId}/reextract-character`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({worldbuilding: S.worldbuilding, name}),
+    });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}: ${await resp.text()}`);
+    const data = await resp.json();
+    if (data.role)        $('char-f-role').value        = data.role;
+    if (data.personality) $('char-f-personality').value = data.personality;
+    if (data.appearance)  $('char-f-appearance').value  = data.appearance;
+    const idx = S.characters.findIndex(x => x.id === _editingCharId);
+    if (idx !== -1 && data.genPrompt) S.characters[idx].genPrompt = data.genPrompt;
+  } catch(e) {
+    console.error('reextractChar failed:', e);
+    alert(`重新提取失败：${e.message}`);
+  } finally {
+    btn.disabled = false; btn.textContent = '↺ 重新提取';
+  }
+}
+
 async function deleteCharFromModal() {
   if (!_editingCharId) return;
   if (!confirm('确认删除此角色？')) return;
@@ -1722,6 +1752,7 @@ function md(t) {
   <div class="char-modal">
     <div class="char-modal-hdr">
       <h3 id="char-modal-title">编辑角色</h3>
+      <button class="char-reextract-btn" id="char-reextract-btn" onclick="reextractChar()">↺ 重新提取</button>
       <button class="char-modal-close" onclick="closeCharModal()">✕</button>
     </div>
     <div class="char-modal-body">

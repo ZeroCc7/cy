@@ -248,6 +248,13 @@ async def project_delete(pid: str):
 
 # ── Characters ───────────────────────────────────────────────────────────────
 
+def _clean_json_obj(raw: str) -> dict:
+    """Strip markdown fences and extract the outermost JSON object."""
+    raw = re.sub(r'^```(?:json)?\s*', '', raw.strip(), flags=re.MULTILINE)
+    raw = re.sub(r'```\s*$', '', raw.strip(), flags=re.MULTILINE).strip()
+    m = re.search(r'\{[\s\S]*\}', raw)
+    return json.loads(m.group(0) if m else raw)
+
 def _extract_json_array(raw: str) -> list:
     """Strip markdown fences and extract the outermost JSON array."""
     raw = re.sub(r'^```(?:json)?\s*', '', raw.strip(), flags=re.MULTILINE)
@@ -271,6 +278,43 @@ async def extract_characters(pid: str, req: Request):
     raw = resp.choices[0].message.content.strip()
     characters = _extract_json_array(raw)
     return JSONResponse(characters)
+
+
+@app.post("/api/project/{pid}/reextract-character")
+async def reextract_character(pid: str, req: Request):
+    body = await req.json()
+    worldbuilding = body.get("worldbuilding", "")
+    name = body.get("name", "未命名")
+    system = (
+        "你是角色信息提取与人设图提示词生成专家。从世界观文档中提取指定角色的详细信息，"
+        "只输出 JSON 对象，不输出任何其他内容。"
+    )
+    prompt = f"""从以下世界观设定文档中提取角色「{name}」的信息，输出 JSON 对象（非数组）。
+
+【世界观文本】
+{worldbuilding}
+
+输出格式（纯 JSON 对象，无其他文字）：
+{{
+  "role": "protagonist",
+  "personality": "性格描述，30字内",
+  "appearance": "外貌描述，40字内，突出视觉特征",
+  "genPrompt": "制作一张高预算院线电影级写实人物设定展板，适配[题材风格]题材，专属定制配色[角色主色调]，背景带有环境光影反射效果。摒弃僵硬网格、对称刻板构图，采用风格化导演提案展板排版，高级概念美术版式。写实真人角色，人体结构精准、比例自然，保留细微的面部与皮肤真实瑕疵，人物情绪张力饱满、人设辨识度极强。包含全套角色设定内容：全身多角度展示视图、多神态头部角度特写、影视级主角肖像、完整服饰拆解细节、服装剪裁工艺展示、高清面料纹理细节、专业影视制作备注。场景背景：[角色标志性场景与氛围]，柔和环境光晕，画面层次丰富，氛围感极致。画面风格：[核心画风]，高对比度电影级光影，院线级曝光质感，浅景深虚化，细腻胶片颗粒质感，情绪表现力拉满，超高细节、照片级写实、8K超高清、对焦清晰、专业概念美术、官方标准人物设定图。"
+}}
+
+规则：
+- role 只能取 protagonist / antagonist / supporting 之一
+- genPrompt 中 [] 内为填写指导，替换为实际内容，不保留方括号
+- 直接输出 JSON，不要加 ```json 标记"""
+    resp = client.chat.completions.create(
+        model=MODEL, max_tokens=1000, stream=False,
+        messages=[
+            {"role": "system", "content": system},
+            {"role": "user",   "content": prompt},
+        ],
+    )
+    raw = resp.choices[0].message.content.strip()
+    return JSONResponse(_clean_json_obj(raw))
 
 
 @app.post("/api/project/{pid}/characters/{cid}/upload-image")
