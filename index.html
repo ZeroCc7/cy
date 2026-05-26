@@ -332,6 +332,7 @@ textarea:disabled{opacity:.4}
   color:#e0d8c8;font-size:13px;font-family:inherit;padding:7px 10px;outline:none}
 .char-field input:focus,.char-field select,.char-field textarea:focus{border-color:#c9a96e44}
 .char-field textarea{resize:none;height:60px;line-height:1.5}
+#char-f-genprompt{height:100px;resize:vertical;font-size:12px;color:#9a9090;line-height:1.6}
 .char-field select option{background:#13131e}
 .char-modal-footer{display:flex;align-items:center;padding:12px 18px;
   border-top:1px solid #1e1e2a;flex-shrink:0;gap:8px}
@@ -1514,6 +1515,7 @@ function openCharModal(charId) {
   $('char-f-role').value        = c.role;
   $('char-f-personality').value = c.personality;
   $('char-f-appearance').value  = c.appearance;
+  $('char-f-genprompt').value   = c.genPrompt || '';
   _refreshModalAvatar(c.imageUrl, c.name);
   // disable gen button if image already exists or is generating
   const genBtn = $('char-gen-btn');
@@ -1535,6 +1537,7 @@ function addNewChar() {
   $('char-f-role').value        = newChar.role;
   $('char-f-personality').value = '';
   $('char-f-appearance').value  = '';
+  $('char-f-genprompt').value   = '';
   _refreshModalAvatar(null, newChar.name);
   $('char-delete-btn').style.display = '';
   $('char-modal-overlay').style.display = 'flex';
@@ -1563,6 +1566,7 @@ async function saveCharModal() {
     role:        $('char-f-role').value,
     personality: $('char-f-personality').value.trim(),
     appearance:  $('char-f-appearance').value.trim(),
+    genPrompt:   $('char-f-genprompt').value.trim(),
   };
   closeCharModal();
   renderCharSection();
@@ -1585,6 +1589,7 @@ async function reextractChar() {
     if (data.role)        $('char-f-role').value        = data.role;
     if (data.personality) $('char-f-personality').value = data.personality;
     if (data.appearance)  $('char-f-appearance').value  = data.appearance;
+    if (data.genPrompt)   $('char-f-genprompt').value   = data.genPrompt;
     const idx = S.characters.findIndex(x => x.id === _editingCharId);
     if (idx !== -1 && data.genPrompt) S.characters[idx].genPrompt = data.genPrompt;
   } catch(e) {
@@ -1785,6 +1790,10 @@ function md(t) {
         <div class="char-field">
           <label>外貌描述</label>
           <textarea id="char-f-appearance" placeholder="外貌特征，40字内，用于 AI 生图"></textarea>
+        </div>
+        <div class="char-field">
+          <label>生图提示词</label>
+          <textarea id="char-f-genprompt" placeholder="AI 生图时使用的完整提示词，提取角色时自动生成"></textarea>
         </div>
       </div>
     </div>
