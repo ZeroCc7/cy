@@ -1496,6 +1496,7 @@ async function extractCharacters() {
     S.characters = list.map((c, i) => ({
       id: c.id || `char_${Date.now()}_${i}`,
       name: c.name || '未命名',
+      age: c.age || '',
       role: ['protagonist','antagonist','supporting'].includes(c.role) ? c.role : 'supporting',
       personality: c.personality || '',
       appearance: c.appearance || '',
@@ -1520,6 +1521,7 @@ function openCharModal(charId) {
   _editingCharId = charId;
   $('char-modal-title').textContent = '编辑角色';
   $('char-f-name').value        = c.name;
+  $('char-f-age').value         = c.age || '';
   $('char-f-role').value        = c.role;
   $('char-f-personality').value = c.personality;
   $('char-f-appearance').value  = c.appearance;
@@ -1535,13 +1537,14 @@ function openCharModal(charId) {
 function addNewChar() {
   const newChar = {
     id: `char_${Date.now()}`,
-    name: '新角色', role: 'supporting',
+    name: '新角色', age: '', role: 'supporting',
     personality: '', appearance: '', imageUrl: null, genPrompt: '',
   };
   S.characters.push(newChar);
   _editingCharId = newChar.id;
   $('char-modal-title').textContent = '新增角色';
   $('char-f-name').value        = newChar.name;
+  $('char-f-age').value         = '';
   $('char-f-role').value        = newChar.role;
   $('char-f-personality').value = '';
   $('char-f-appearance').value  = '';
@@ -1572,6 +1575,7 @@ async function saveCharModal() {
   S.characters[idx] = {
     ...S.characters[idx],
     name:        $('char-f-name').value.trim() || '未命名',
+    age:         $('char-f-age').value.trim(),
     role:        $('char-f-role').value,
     personality: $('char-f-personality').value.trim(),
     appearance:  $('char-f-appearance').value.trim(),
@@ -1595,10 +1599,11 @@ async function reextractChar() {
     });
     if (!resp.ok) throw new Error(`HTTP ${resp.status}: ${await resp.text()}`);
     const data = await resp.json();
-    if (data.role)        $('char-f-role').value        = data.role;
-    if (data.personality) $('char-f-personality').value = data.personality;
-    if (data.appearance)  $('char-f-appearance').value  = data.appearance;
-    if (data.genPrompt)   $('char-f-genprompt').value   = data.genPrompt;
+    if (data.age)         $('char-f-age').value          = data.age;
+    if (data.role)        $('char-f-role').value         = data.role;
+    if (data.personality) $('char-f-personality').value  = data.personality;
+    if (data.appearance)  $('char-f-appearance').value   = data.appearance;
+    if (data.genPrompt)   $('char-f-genprompt').value    = data.genPrompt;
     const idx = S.characters.findIndex(x => x.id === _editingCharId);
     if (idx !== -1 && data.genPrompt) S.characters[idx].genPrompt = data.genPrompt;
   } catch(e) {
@@ -1798,9 +1803,15 @@ function md(t) {
         <button class="char-img-btn" id="char-gen-btn" onclick="openGenDialog()">✦ AI 生成图</button>
       </div>
       <div class="char-modal-right">
-        <div class="char-field">
-          <label>姓名</label>
-          <input id="char-f-name" type="text" placeholder="角色姓名">
+        <div class="char-field" style="display:flex;gap:10px">
+          <div style="flex:1">
+            <label>姓名</label>
+            <input id="char-f-name" type="text" placeholder="角色姓名">
+          </div>
+          <div style="width:90px">
+            <label>年龄</label>
+            <input id="char-f-age" type="text" placeholder="如 18岁">
+          </div>
         </div>
         <div class="char-field">
           <label>定位</label>
