@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import asyncio
+import base64
 import os
 import re
 import json
@@ -30,6 +31,10 @@ EXPORT_DIR = "./scripts"
 
 DASHSCOPE_API_KEY = os.environ.get("DASHSCOPE_API_KEY") or os.environ["OPENAI_API_KEY"]
 dashscope.base_http_api_url = "https://dashscope.aliyuncs.com/api/v1"
+
+IMAGE_API_KEY  = os.environ.get("IMAGE_API_KEY") or os.environ["OPENAI_API_KEY"]
+IMAGE_BASE_URL = os.environ.get("IMAGE_BASE_URL", "https://api.openai.com/v1")
+image_client   = OpenAI(api_key=IMAGE_API_KEY, base_url=IMAGE_BASE_URL)
 
 db: Client = create_client(
     os.environ["SUPABASE_URL"],
@@ -342,29 +347,40 @@ async def generate_character_image(pid: str, cid: str, req: Request):
         "精致五官，华丽古装服饰，衣袂飘逸，细腻笔触，简洁渐变背景，高清插画"
     )
 
-    def _generate_sync() -> str:
-        msg = DSMessage(role="user", content=[{"text": prompt_text}])
-        task = DSImageGen.async_call(
-            model=model,
-            api_key=DASHSCOPE_API_KEY,
-            messages=[msg],
-            watermark=False,
-            n=1,
-            size="1024*1440",
-        )
-        result = DSImageGen.wait(task=task, api_key=DASHSCOPE_API_KEY)
-        if result.output.task_status != "SUCCEEDED":
-            raise RuntimeError(f"图片生成失败：{result.output.task_status}")
-        for choice in result.output.choices:
-            for item in choice["message"]["content"]:
-                if item.get("type") == "image":
-                    return item["image"]
-        raise RuntimeError("未获取到图片 URL")
+    if model.startswith("gpt-image"):
+        def _openai_gen() -> bytes:
+            res = image_client.images.generate(
+                model=model,
+                prompt=prompt_text,
+                size="1024x1792",
+                quality="hd",
+                response_format="b64_json",
+            )
+            return base64.b64decode(res.data[0].b64_json)
+        img_data = await asyncio.to_thread(_openai_gen)
+    else:
+        def _dashscope_gen() -> str:
+            msg = DSMessage(role="user", content=[{"text": prompt_text}])
+            task = DSImageGen.async_call(
+                model=model,
+                api_key=DASHSCOPE_API_KEY,
+                messages=[msg],
+                watermark=False,
+                n=1,
+                size="1024*1440",
+            )
+            result = DSImageGen.wait(task=task, api_key=DASHSCOPE_API_KEY)
+            if result.output.task_status != "SUCCEEDED":
+                raise RuntimeError(f"图片生成失败：{result.output.task_status}")
+            for choice in result.output.choices:
+                for item in choice["message"]["content"]:
+                    if item.get("type") == "image":
+                        return item["image"]
+            raise RuntimeError("未获取到图片 URL")
 
-    image_url = await asyncio.to_thread(_generate_sync)
-
-    async with httpx.AsyncClient(timeout=60) as hc:
-        img_data = (await hc.get(image_url)).content
+        image_url = await asyncio.to_thread(_dashscope_gen)
+        async with httpx.AsyncClient(timeout=60) as hc:
+            img_data = (await hc.get(image_url)).content
 
     path = f"{pid}/{cid}.webp"
     db.storage.from_("character-images").upload(
