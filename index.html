@@ -285,7 +285,8 @@ textarea:disabled{opacity:.4}
 .gen-confirm-btn{background:#c9a96e;color:#1a1208;border:none;
   font-size:12.5px;font-weight:600;padding:6px 20px;border-radius:7px;cursor:pointer;transition:background .15s}
 .gen-confirm-btn:hover{background:#d4b87a}
-.char-avatar img{width:100%;height:100%;object-fit:cover}
+.char-avatar img{width:100%;height:100%;object-fit:cover;cursor:zoom-in}
+.char-modal-avatar img{width:100%;height:100%;object-fit:cover;cursor:zoom-in}
 .char-avatar-placeholder{font-size:28px;color:#333;font-weight:700;
   background:linear-gradient(135deg,#1a1a2a,#242438)}
 .char-info{padding:8px 10px}
@@ -319,8 +320,15 @@ textarea:disabled{opacity:.4}
 .char-modal-avatar{width:150px;height:200px;background:#1a1a2a;border-radius:9px;
   display:flex;align-items:center;justify-content:center;overflow:hidden;
   border:1px solid #252535}
-.char-modal-avatar img{width:100%;height:100%;object-fit:cover}
+.char-modal-avatar img{width:100%;height:100%;object-fit:cover;cursor:zoom-in}
 .char-modal-avatar-ph{font-size:40px;color:#2a2a3a;font-weight:700}
+/* ── Image Lightbox ── */
+.img-lightbox{position:fixed;inset:0;background:#000000cc;display:flex;
+  flex-direction:column;align-items:center;justify-content:center;
+  z-index:300;cursor:zoom-out;padding:20px}
+.img-lightbox img{max-width:90vw;max-height:85vh;object-fit:contain;
+  border-radius:6px;box-shadow:0 8px 40px #00000088;pointer-events:none}
+.img-lightbox-name{margin-top:12px;font-size:13px;color:#c9a96ecc;pointer-events:none}
 .char-img-btn{width:100%;padding:6px 0;border-radius:7px;border:1px solid #2a2a38;
   background:transparent;color:#777;font-size:11.5px;cursor:pointer;transition:all .15s}
 .char-img-btn:hover{background:#1e1e2a;color:#c9a96e;border-color:#c9a96e55}
@@ -1437,7 +1445,7 @@ function makeCharCard(c) {
   if (c.generating) {
     avatarInner = `<div class="char-generating-overlay"><span class="char-spinner"></span><span>生成中…</span></div>`;
   } else if (c.imageUrl) {
-    avatarInner = `<img src="${c.imageUrl}" alt="${c.name}">`;
+    avatarInner = `<img src="${c.imageUrl}" alt="${c.name}" onclick="openLightbox('${c.imageUrl}','${c.name.replace(/'/g,"\\'")}');event.stopPropagation()">`;
   } else {
     avatarInner = `<span class="char-avatar-placeholder">${c.name.charAt(0)}</span>`;
   }
@@ -1551,7 +1559,8 @@ function closeCharModal() {
 function _refreshModalAvatar(imageUrl, name) {
   const av = $('char-modal-avatar');
   if (imageUrl) {
-    av.innerHTML = `<img src="${imageUrl}" alt="${name}">`;
+    const safe = (name||'').replace(/'/g, "\\'");
+    av.innerHTML = `<img src="${imageUrl}" alt="${name}" onclick="openLightbox('${imageUrl}','${safe}')">`;
   } else {
     av.innerHTML = `<span class="char-modal-avatar-ph">${(name||'?').charAt(0)}</span>`;
   }
@@ -1642,6 +1651,16 @@ function _buildGenPrompt(c) {
   return `${base}，古装写实风格，人物设定图，全身正面站立，精致五官，华丽古装服饰，衣袂飘逸，细腻笔触，简洁渐变背景，高清插画`;
 }
 
+function openLightbox(url, name) {
+  $('img-lightbox-img').src = url;
+  $('img-lightbox-name').textContent = name || '';
+  $('img-lightbox').style.display = 'flex';
+}
+function closeLightbox() {
+  $('img-lightbox').style.display = 'none';
+  $('img-lightbox-img').src = '';
+}
+
 function openGenDialog() {
   if (!_editingCharId) return;
   const c = S.characters.find(x => x.id === _editingCharId);
@@ -1727,6 +1746,12 @@ function md(t) {
     }).join('');
 }
 </script>
+
+<!-- ── Image Lightbox ── -->
+<div class="img-lightbox" id="img-lightbox" style="display:none" onclick="closeLightbox()">
+  <img id="img-lightbox-img" src="" alt="">
+  <span class="img-lightbox-name" id="img-lightbox-name"></span>
+</div>
 
 <!-- ── Gen Image Dialog ── -->
 <div class="gen-dialog-overlay" id="gen-dialog-overlay" style="display:none"
