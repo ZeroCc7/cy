@@ -1527,9 +1527,8 @@ function openCharModal(charId) {
   $('char-f-appearance').value  = c.appearance;
   $('char-f-genprompt').value   = c.genPrompt || '';
   _refreshModalAvatar(c.imageUrl, c.name);
-  // disable gen button if image already exists or is generating
   const genBtn = $('char-gen-btn');
-  if (genBtn) genBtn.disabled = !!(c.imageUrl || c.generating);
+  if (genBtn) genBtn.disabled = !!c.generating;
   $('char-delete-btn').style.display = '';
   $('char-modal-overlay').style.display = 'flex';
 }
@@ -1671,7 +1670,7 @@ function closeLightbox() {
 function openGenDialog() {
   if (!_editingCharId) return;
   const c = S.characters.find(x => x.id === _editingCharId);
-  if (!c || c.imageUrl || c.generating) return;
+  if (!c || c.generating) return;
   _genDialogCharId = _editingCharId;
   $('gen-prompt').value = _buildGenPrompt(c);
   $('gen-dialog-overlay').style.display = 'flex';
