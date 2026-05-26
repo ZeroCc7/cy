@@ -66,15 +66,23 @@ header h1::before{
   border-radius:20px;padding:3px;flex-shrink:0}
 .step{
   padding:3px 11px;border-radius:16px;font-size:11px;font-weight:500;
-  color:var(--txt-3);transition:all .25s;white-space:nowrap;
+  color:var(--txt-4);transition:all .2s;white-space:nowrap;
   letter-spacing:.03em;cursor:default;border:1px solid transparent
 }
 .step.active{
   background:var(--gold-dim);border-color:var(--gold);
   color:var(--gold);font-weight:600
 }
-.step.done{color:var(--safe);cursor:pointer}
-.step.done:hover{color:color-mix(in srgb,var(--safe) 130%,white)}
+.step.done{
+  background:color-mix(in srgb,var(--safe) 10%,transparent);
+  border-color:color-mix(in srgb,var(--safe) 28%,transparent);
+  color:var(--safe);cursor:pointer;font-weight:500
+}
+.step.done:hover{
+  background:color-mix(in srgb,var(--safe) 18%,transparent);
+  border-color:color-mix(in srgb,var(--safe) 55%,transparent);
+  color:color-mix(in srgb,var(--safe) 140%,white)
+}
 .step-arrow{color:var(--line-3);font-size:9px}
 
 /* Header button groups */
@@ -1347,8 +1355,8 @@ function setStep(n) {
   S.phase=['chat','worldbuilding','outline','episodes'][n-1];
   ['s1','s2','s3','s4'].forEach((id,i)=>{
     $(id).className='step'+(i+1<n?' done':i+1===n?' active':'');
+    $(id).title = i+1 < n ? '点击返回此步骤' : '';
   });
-  // 已完成的步骤可点击跳回
   $('s2').onclick = S.worldbuilding ? backToWorldbuilding : null;
   $('s3').onclick = S.outline        ? backToOutline       : null;
   $('s4').onclick = S.outline && (S.phase==='episodes'||Object.keys(S.episodes).length) ? backToEpisodes : null;
