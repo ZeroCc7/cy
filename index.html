@@ -1431,7 +1431,7 @@ async function saveCharacters() {
 
 async function extractCharacters() {
   if (!S.worldbuilding) return;
-  const btn = document.querySelector('[onclick="extractCharacters()"]');
+  const btn = Array.from($('toolbar').querySelectorAll('button')).find(b => b.textContent.includes('提取角色'));
   if (btn) { btn.disabled = true; btn.textContent = '提取中…'; }
   try {
     const resp = await fetch(`/api/project/${S.projectId}/extract-characters`, {
@@ -1439,7 +1439,12 @@ async function extractCharacters() {
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({worldbuilding: S.worldbuilding}),
     });
+    if (!resp.ok) {
+      const err = await resp.text();
+      throw new Error(`HTTP ${resp.status}: ${err}`);
+    }
     const list = await resp.json();
+    if (!Array.isArray(list)) throw new Error('返回数据不是数组: ' + JSON.stringify(list));
     S.characters = list.map((c, i) => ({
       id: c.id || `char_${Date.now()}_${i}`,
       name: c.name || '未命名',
@@ -1450,8 +1455,9 @@ async function extractCharacters() {
     }));
     renderCharSection();
     await saveCharacters();
-  } catch {
-    appendMsg('system', '角色提取失败，请重试');
+  } catch(e) {
+    console.error('extractCharacters failed:', e);
+    appendMsg('system', `角色提取失败：${e.message}`);
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = '✦ 提取角色'; }
   }
