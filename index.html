@@ -7,6 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
 <style>
 /* ── Design Tokens ─────────────────────────────────────────────── */
 :root{
@@ -732,6 +733,27 @@ textarea:disabled{opacity:.35}
   color:color-mix(in srgb,var(--gold) 80%,transparent);pointer-events:none;
   letter-spacing:.04em
 }
+
+/* ── Generation shimmer ─────────────────────────────────────────── */
+@keyframes gen-shimmer{
+  0%  {background-position:-200% center}
+  100%{background-position: 200% center}
+}
+.content-panel.is-generating .content-toolbar{
+  background:linear-gradient(
+    90deg,
+    var(--surf-1) 20%,
+    color-mix(in srgb,var(--gold) 10%,var(--surf-1)) 50%,
+    var(--surf-1) 80%
+  );
+  background-size:200% auto;
+  animation:gen-shimmer 2s linear infinite
+}
+
+/* prefers-reduced-motion: skip decorative animations */
+@media(prefers-reduced-motion:reduce){
+  .content-panel.is-generating .content-toolbar{animation:none}
+}
 </style>
 </head>
 <body>
@@ -857,6 +879,38 @@ textarea:disabled{opacity:.35}
 // ══════════════════════════════════════════════════════════════════
 //  主创作流程
 // ══════════════════════════════════════════════════════════════════
+
+// ── Animation helpers (GSAP) ─────────────────────────────────────
+const anim = {
+  // 单元素：消息气泡、内容区块
+  in(el, opts = {}) {
+    if (!el) return;
+    gsap.from(el, { opacity: 0, y: 12, duration: 0.28, ease: 'power2.out', clearProps: 'all', ...opts });
+  },
+  // 内容面板切换（从右滑入）
+  contentIn(el) {
+    if (!el) return;
+    gsap.from(el, { opacity: 0, x: 18, duration: 0.35, ease: 'power2.out', clearProps: 'all' });
+  },
+  // 卡片错开入场
+  cardsIn(selector, stagger = 0.05) {
+    const els = document.querySelectorAll(selector);
+    if (!els.length) return;
+    gsap.from(els, {
+      opacity: 0, y: 18, scale: 0.96,
+      duration: 0.32, stagger, ease: 'back.out(1.4)', clearProps: 'all'
+    });
+  },
+  // chips / toolbar 按钮错开
+  chipsIn(selector) {
+    const els = document.querySelectorAll(selector);
+    if (!els.length) return;
+    gsap.from(els, { opacity: 0, y: 6, duration: 0.18, stagger: 0.04, ease: 'power2.out', clearProps: 'all' });
+  },
+  // 生成中 shimmer
+  genStart() { document.querySelector('.content-panel')?.classList.add('is-generating'); },
+  genEnd()   { document.querySelector('.content-panel')?.classList.remove('is-generating'); },
+};
 
 const S = {
   phase:'chat', projectId:null,
@@ -986,6 +1040,7 @@ function renderHomeList(list) {
     <div class="proj-grid-home" id="proj-grid-home"></div>`;
   const grid = $('proj-grid-home');
   list.forEach(p => grid.appendChild(makeHomeCard(p)));
+  anim.cardsIn('.proj-card-home', 0.05);
 }
 
 function makeHomeCard(p) {
@@ -1050,6 +1105,7 @@ function appendMsg(role, text) {
   bubble.textContent = text;
   wrap.appendChild(bubble);
   $('messages').appendChild(wrap);
+  anim.in(wrap, { y: 8, duration: 0.22 });
   $('messages').scrollTop = $('messages').scrollHeight;
   return bubble;
 }
@@ -1089,6 +1145,7 @@ function setChips(defs) {
     b.className=`chip ${cls||''}`; b.textContent=label; b.onclick=fn;
     $('chips').appendChild(b);
   });
+  if (defs.length) anim.chipsIn('#chips .chip');
 }
 function setToolbar(defs) {
   $('toolbar').innerHTML='';
@@ -1097,6 +1154,7 @@ function setToolbar(defs) {
     b.className=`chip ${cls||''}`; b.textContent=label; b.onclick=fn;
     $('toolbar').appendChild(b);
   });
+  if (defs.length) anim.chipsIn('#toolbar .chip');
 }
 
 // ── 修改模式 ──
@@ -1162,6 +1220,8 @@ function showReadyChips() {
 async function startWorldbuilding() {
   S.episodeCount=parseInt($('ep-count')?.value||15);
   document.querySelector('.layout').classList.remove('chat-focus');
+  // content panel slides in from right
+  requestAnimationFrame(() => anim.contentIn(document.querySelector('.content-panel')));
   setChips([]); setStep(2);
   const sumMsgs=[...S.messages,{role:'user',
     content:'请用150字内总结我的故事需求：主角、世界观类型、核心矛盾、情感基调、爽点关键词。直接输出，不要寒暄。'}];
@@ -1177,14 +1237,16 @@ async function startWorldbuilding() {
   appendMsg('system','正在构建世界观…');
   $('ctitle').textContent='世界观设定 · 生成中';
   $('cbody').innerHTML='<div class="rendered" id="main-render"></div>';
+  anim.genStart();
   const r=$('main-render'); let wb='';
   try {
     wb=await streamPost('/api/worldbuilding',{requirements:req},c=>{
       wb+=c; r.innerHTML=md(wb)+'<span class="typing-cursor"></span>';
       $('cbody').scrollTop=$('cbody').scrollHeight;
     });
-  } catch { r.textContent='生成失败'; setLoading(false); return; }
+  } catch { r.textContent='生成失败'; setLoading(false); anim.genEnd(); return; }
   r.innerHTML=md(wb); S.worldbuilding=wb;
+  anim.genEnd(); anim.contentIn($('cbody'));
   $('ctitle').textContent='世界观设定'; setLoading(false);
   saveProject(); showWorldbuildingActions();
   appendMsg('assistant','世界观设定完成！可以直接生成大纲，或告诉我需要修改的地方。');
@@ -1211,6 +1273,7 @@ function backToWorldbuilding() {
   setStep(2);
   $('ctitle').textContent='世界观设定';
   $('cbody').innerHTML=`<div class="rendered">${md(S.worldbuilding)}</div>`;
+  anim.contentIn($('cbody'));
   showWorldbuildingActions();
 }
 
@@ -1218,6 +1281,7 @@ function backToOutline() {
   setStep(3);
   $('ctitle').textContent=`故事大纲 · ${S.episodeCount} 集`;
   $('cbody').innerHTML=`<div class="rendered">${md(S.outline)}</div>`;
+  anim.contentIn($('cbody'));
   showOutlineActions();
 }
 
@@ -1227,6 +1291,7 @@ async function startOutline() {
   appendMsg('system',`正在生成 ${S.episodeCount} 集大纲…`);
   $('ctitle').textContent=`故事大纲 · ${S.episodeCount} 集 · 生成中`;
   $('cbody').innerHTML='<div class="rendered" id="main-render"></div>';
+  anim.genStart();
   const r=$('main-render'); let ol=''; setLoading(true);
   try {
     ol=await streamPost('/api/outline',{requirements:S.requirements,
@@ -1234,8 +1299,9 @@ async function startOutline() {
       ol+=c; r.innerHTML=md(ol)+'<span class="typing-cursor"></span>';
       $('cbody').scrollTop=$('cbody').scrollHeight;
     });
-  } catch { r.textContent='生成失败'; setLoading(false); return; }
+  } catch { r.textContent='生成失败'; setLoading(false); anim.genEnd(); return; }
   r.innerHTML=md(ol); S.outline=ol;
+  anim.genEnd(); anim.contentIn($('cbody'));
   $('ctitle').textContent=`故事大纲 · ${S.episodeCount} 集`; setLoading(false);
   saveProject(); showOutlineActions();
   appendMsg('assistant','大纲已生成！满意就继续，或者告诉我需要调整的地方。');
@@ -1276,6 +1342,7 @@ function renderEpisodeGrid() {
   const g=document.createElement('div'); g.className='ep-grid'; g.id='ep-grid';
   for(let i=1;i<=S.episodeCount;i++) g.appendChild(makeEpCard(i));
   $('cbody').innerHTML=''; $('cbody').appendChild(g);
+  anim.cardsIn('.ep-card', 0.035);
 }
 
 function makeEpCard(num) {
@@ -1298,7 +1365,7 @@ async function generateEpisode(num) {
   if(S.generating) return;
   const card=$(`ep-${num}`);
   if(card){card.className='ep-card generating';card.querySelector('.ep-card-title').textContent='生成中…';}
-  showEpContent(num,'',true); setLoading(true);
+  showEpContent(num,'',true); anim.genStart(); setLoading(true);
   const r=$('main-render'); let raw='';
   try {
     raw=await streamPost('/api/episode',{outline:S.outline,episode_num:num},c=>{
@@ -1307,9 +1374,9 @@ async function generateEpisode(num) {
     });
   } catch {
     if(card){card.className='ep-card';card.querySelector('.ep-card-title').textContent='失败，点击重试';}
-    setLoading(false); return;
+    setLoading(false); anim.genEnd(); return;
   }
-  r.innerHTML=md(raw); S.episodes[num]=raw; setLoading(false);
+  r.innerHTML=md(raw); S.episodes[num]=raw; anim.genEnd(); setLoading(false);
   refreshEpCard(num); $('ctitle').textContent=`第 ${num} 集 · 完成`;
   setToolbar([
     {label:`修改第 ${num} 集`,fn:()=>requestRefineEpisode(num)},
@@ -1888,6 +1955,7 @@ function renderCharSection() {
   const grid = $('char-grid');
   S.characters.forEach(c => grid.appendChild(makeCharCard(c)));
   updateCharBtn();
+  anim.cardsIn('.char-card', 0.06);
 }
 
 function makeCharCard(c) {
