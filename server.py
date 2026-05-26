@@ -1,8 +1,12 @@
 #!/usr/bin/env python3
 import asyncio
 import os
+import re
 import json
 import httpx
+import dashscope
+from dashscope.aigc.image_generation import ImageGeneration as DSImageGen
+from dashscope.api_entities.dashscope_response import Message as DSMessage
 from pathlib import Path
 from datetime import datetime
 from dotenv import load_dotenv
@@ -23,6 +27,9 @@ client = OpenAI(
 )
 MODEL      = os.environ["OPENAI_MODEL_ID"]
 EXPORT_DIR = "./scripts"
+
+DASHSCOPE_API_KEY = os.environ.get("DASHSCOPE_API_KEY") or os.environ["OPENAI_API_KEY"]
+dashscope.base_http_api_url = "https://dashscope.aliyuncs.com/api/v1"
 
 db: Client = create_client(
     os.environ["SUPABASE_URL"],
@@ -241,6 +248,14 @@ async def project_delete(pid: str):
 
 # ── Characters ───────────────────────────────────────────────────────────────
 
+def _extract_json_array(raw: str) -> list:
+    """Strip markdown fences and extract the outermost JSON array."""
+    raw = re.sub(r'^```(?:json)?\s*', '', raw.strip(), flags=re.MULTILINE)
+    raw = re.sub(r'```\s*$', '', raw.strip(), flags=re.MULTILINE).strip()
+    m = re.search(r'\[[\s\S]*\]', raw)
+    return json.loads(m.group(0) if m else raw)
+
+
 @app.post("/api/project/{pid}/extract-characters")
 async def extract_characters(pid: str, req: Request):
     body = await req.json()
@@ -254,9 +269,7 @@ async def extract_characters(pid: str, req: Request):
         ],
     )
     raw = resp.choices[0].message.content.strip()
-    if raw.startswith("```"):
-        raw = raw.split("\n", 1)[1].rsplit("```", 1)[0].strip()
-    characters = json.loads(raw)
+    characters = _extract_json_array(raw)
     return JSONResponse(characters)
 
 
@@ -276,33 +289,31 @@ async def upload_character_image(pid: str, cid: str, file: UploadFile = File(...
 async def generate_character_image(pid: str, cid: str, req: Request):
     body = await req.json()
     appearance = body.get("appearance", "神秘人物")
-    prompt_text = f"{appearance}，古装写实风格，精致面部，电影质感，高清竖版半身像"
-    try:
-        resp = await asyncio.to_thread(
-            client.images.generate,
-            model="wanx2.1-t2i-turbo",
-            prompt=prompt_text,
-            size="768*1024",
+    prompt_text = (
+        f"{appearance}，古装写实风格，人物设定图，全身正面站立，"
+        "精致五官，华丽古装服饰，衣袂飘逸，细腻笔触，简洁渐变背景，高清插画"
+    )
+
+    def _generate_sync() -> str:
+        msg = DSMessage(role="user", content=[{"text": prompt_text}])
+        task = DSImageGen.async_call(
+            model="wan2.1-t2i-turbo",
+            api_key=DASHSCOPE_API_KEY,
+            messages=[msg],
+            watermark=False,
             n=1,
+            size="1024*1440",
         )
-        image_url = resp.data[0].url
-    except Exception:
-        async with httpx.AsyncClient(timeout=60) as hc:
-            r = await hc.post(
-                "https://dashscope.aliyuncs.com/api/v1/services/aigc/text2image/image-synthesis",
-                headers={
-                    "Authorization": f"Bearer {os.environ['OPENAI_API_KEY']}",
-                    "Content-Type": "application/json",
-                    "X-DashScope-Async": "disable",
-                },
-                json={
-                    "model": "wanx2.1-t2i-turbo",
-                    "input": {"prompt": prompt_text},
-                    "parameters": {"size": "768*1024", "n": 1},
-                },
-            )
-            r.raise_for_status()
-            image_url = r.json()["output"]["results"][0]["url"]
+        result = DSImageGen.wait(task=task, api_key=DASHSCOPE_API_KEY)
+        if result.output.task_status != "SUCCEEDED":
+            raise RuntimeError(f"图片生成失败：{result.output.task_status}")
+        for choice in result.output.choices:
+            for item in choice["message"]["content"]:
+                if item.get("type") == "image":
+                    return item["image"]
+        raise RuntimeError("未获取到图片 URL")
+
+    image_url = await asyncio.to_thread(_generate_sync)
 
     async with httpx.AsyncClient(timeout=60) as hc:
         img_data = (await hc.get(image_url)).content
