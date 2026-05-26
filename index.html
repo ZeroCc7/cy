@@ -60,42 +60,81 @@ header h1::before{
 }
 
 /* Step bar */
-.step-bar{display:flex;gap:2px;margin-left:auto;align-items:center}
+/* Step bar */
+.step-bar{display:flex;gap:0;margin-left:auto;align-items:center;
+  background:var(--surf-2);border:1px solid var(--line-2);
+  border-radius:20px;padding:3px;flex-shrink:0}
 .step{
-  padding:4px 12px;border-radius:20px;font-size:11px;font-weight:500;
-  border:1px solid var(--line-3);color:var(--txt-3);
-  transition:all .25s;white-space:nowrap;letter-spacing:.03em
+  padding:3px 11px;border-radius:16px;font-size:11px;font-weight:500;
+  color:var(--txt-3);transition:all .25s;white-space:nowrap;
+  letter-spacing:.03em;cursor:default;border:1px solid transparent
 }
 .step.active{
   background:var(--gold-dim);border-color:var(--gold);
-  color:var(--gold);font-weight:600;
-  box-shadow:0 0 12px var(--gold-dim)
+  color:var(--gold);font-weight:600
 }
-.step.done{
-  background:#1a2e1a;border-color:#2e5e2e40;color:var(--safe);cursor:pointer
-}
-.step.done:hover{background:#1f361f;border-color:#3a7a3a}
-.step-arrow{color:var(--line-3);font-size:9px;margin:0 1px}
+.step.done{color:var(--safe);cursor:pointer}
+.step.done:hover{color:color-mix(in srgb,var(--safe) 130%,white)}
+.step-arrow{color:var(--line-3);font-size:9px}
 
-/* Header buttons */
+/* Header button groups */
+.hdr-actions{display:flex;align-items:center;gap:6px;margin-left:14px;flex-shrink:0}
+.hdr-divider{width:1px;height:18px;background:var(--line-3);margin:0 2px;flex-shrink:0}
+
+/* Ghost button (tertiary) */
 .hdr-btn{
-  display:flex;align-items:center;gap:5px;padding:5px 13px;border-radius:var(--r-sm);
-  border:1px solid var(--line-3);background:transparent;color:var(--txt-2);
-  font-size:12px;font-family:inherit;cursor:pointer;transition:all .2s;
-  white-space:nowrap;margin-left:4px
+  display:flex;align-items:center;gap:5px;padding:5px 11px;
+  border-radius:var(--r-sm);border:none;background:transparent;
+  color:var(--txt-2);font-size:12px;font-family:inherit;
+  cursor:pointer;transition:all .18s;white-space:nowrap
 }
-.hdr-btn:hover{
+.hdr-btn:hover{background:var(--surf-3);color:var(--txt-1)}
+.hdr-btn.active{background:var(--surf-3);color:var(--gold)}
+
+/* Outlined secondary button */
+.hdr-btn-outline{
+  display:flex;align-items:center;gap:5px;padding:5px 12px;
+  border-radius:var(--r-sm);border:1px solid var(--line-3);background:transparent;
+  color:var(--txt-2);font-size:12px;font-family:inherit;
+  cursor:pointer;transition:all .18s;white-space:nowrap
+}
+.hdr-btn-outline:hover{
   background:var(--surf-3);color:var(--gold);
-  border-color:var(--gold-dim);box-shadow:0 0 8px var(--gold-faint)
+  border-color:var(--gold-dim)
 }
-.hdr-btn.active{background:var(--surf-3);color:var(--gold);border-color:var(--gold-dim)}
+.hdr-btn-outline.active{
+  background:var(--surf-3);color:var(--gold);border-color:var(--gold-dim)
+}
+
+/* Primary solid button */
 .primary-hdr-btn{
-  background:var(--gold);color:#110d04;border-color:var(--gold);font-weight:600
+  display:flex;align-items:center;gap:5px;padding:5px 14px;
+  border-radius:var(--r-sm);border:none;
+  background:var(--gold);color:#0e0a02;font-size:12px;font-weight:700;
+  font-family:inherit;cursor:pointer;transition:all .18s;white-space:nowrap
 }
-.primary-hdr-btn:hover{
-  background:var(--gold-lt);border-color:var(--gold-lt);color:#110d04;
-  box-shadow:0 0 14px var(--gold-dim)
+.primary-hdr-btn:hover{background:var(--gold-lt);box-shadow:0 2px 12px #c8a95e35}
+
+/* Character button with count badge */
+.hdr-char-btn{
+  display:flex;align-items:center;gap:5px;padding:5px 12px;
+  border-radius:var(--r-sm);border:1px solid var(--line-3);background:transparent;
+  color:var(--txt-2);font-size:12px;font-family:inherit;
+  cursor:pointer;transition:all .18s;white-space:nowrap
 }
+.hdr-char-btn:hover{
+  background:var(--surf-3);color:var(--gold);border-color:var(--gold-dim)
+}
+.hdr-char-btn.has-chars{
+  border-color:var(--gold-dim);color:var(--gold)
+}
+.char-count-badge{
+  display:inline-flex;align-items:center;justify-content:center;
+  min-width:17px;height:17px;padding:0 4px;border-radius:10px;
+  background:var(--gold);color:#0e0a02;font-size:10px;font-weight:700;
+  line-height:1;transition:all .2s
+}
+.hdr-char-btn:not(.has-chars) .char-count-badge{display:none}
 
 /* ── Layout ─────────────────────────────────────────────────────── */
 .layout{display:flex;flex:1;overflow:hidden}
@@ -641,10 +680,11 @@ textarea:disabled{opacity:.35}
 <body>
 <header>
   <button class="hdr-btn" id="back-home-btn" onclick="goto('#/')" style="display:none">
-    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="15 18 9 12 15 6"/></svg>
     首页
   </button>
   <h1>短视频剧本生成器</h1>
+
   <div class="step-bar" id="step-bar">
     <div class="step active" id="s1">需求</div>
     <span class="step-arrow">›</span>
@@ -654,17 +694,33 @@ textarea:disabled{opacity:.35}
     <span class="step-arrow">›</span>
     <div class="step" id="s4">剧本</div>
   </div>
-  <button class="hdr-btn primary-hdr-btn" id="new-proj-btn" onclick="goto('#/project/new')" style="display:none">
-    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-    新建剧本
-  </button>
-  <button class="hdr-btn" id="history-btn" onclick="toggleHistory()">
-    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-      <polyline points="12 8 12 12 14 14"/>
-      <path d="M3.05 11a9 9 0 1 0 .5-4"/><polyline points="3 3 3 7 7 7"/>
-    </svg>
-    历史项目
-  </button>
+
+  <div class="hdr-actions">
+    <!-- 创作视图专属按钮 -->
+    <button class="hdr-char-btn" id="char-btn" onclick="openCharPanel()" style="display:none">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="9" cy="7" r="4"/><path d="M3 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2"/>
+        <path d="M16 3.13a4 4 0 0 1 0 7.75"/><path d="M21 21v-2a4 4 0 0 0-3-3.87"/>
+      </svg>
+      角色
+      <span class="char-count-badge" id="char-count">0</span>
+    </button>
+
+    <div class="hdr-divider" id="hdr-div-creation" style="display:none"></div>
+
+    <button class="hdr-btn-outline" id="history-btn" onclick="toggleHistory()">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="12 8 12 12 14 14"/>
+        <path d="M3.05 11a9 9 0 1 0 .5-4"/><polyline points="3 3 3 7 7 7"/>
+      </svg>
+      历史
+    </button>
+
+    <button class="primary-hdr-btn" id="new-proj-btn" onclick="goto('#/project/new')" style="display:none">
+      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      新建剧本
+    </button>
+  </div>
 </header>
 
 <div id="home-view" style="display:none;flex-direction:column;flex:1;overflow:hidden;background:var(--bg)"></div>
@@ -760,21 +816,25 @@ function goto(hash) {
 }
 
 function showHomeView() {
-  $('home-view').style.display      = 'flex';
+  $('home-view').style.display         = 'flex';
   document.querySelector('.layout').style.display = 'none';
-  $('step-bar').style.display       = 'none';
-  $('back-home-btn').style.display  = 'none';
-  $('history-btn').style.display    = 'none';
-  $('new-proj-btn').style.display   = '';
+  $('step-bar').style.display          = 'none';
+  $('back-home-btn').style.display     = 'none';
+  $('history-btn').style.display       = '';
+  $('new-proj-btn').style.display      = '';
+  $('char-btn').style.display          = 'none';
+  $('hdr-div-creation').style.display  = 'none';
 }
 
 function showCreationView() {
-  $('home-view').style.display      = 'none';
+  $('home-view').style.display         = 'none';
   document.querySelector('.layout').style.display = 'flex';
-  $('step-bar').style.display       = '';
-  $('back-home-btn').style.display  = '';
-  $('history-btn').style.display    = '';
-  $('new-proj-btn').style.display   = 'none';
+  $('step-bar').style.display          = '';
+  $('back-home-btn').style.display     = '';
+  $('history-btn').style.display       = '';
+  $('new-proj-btn').style.display      = 'none';
+  $('char-btn').style.display          = '';
+  $('hdr-div-creation').style.display  = '';
 }
 
 async function router() {
@@ -1084,7 +1144,6 @@ function showWorldbuildingActions() {
     {label:'重新生成世界观',fn:startWorldbuilding},
   ]);
   setToolbar([
-    {label:'✦ 提取角色', fn:extractCharacters},
     {label:'修改世界观', fn:()=>enterRefineMode({type:'worldbuilding'},'📝 修改世界观')},
   ]);
 }
@@ -1338,6 +1397,7 @@ function restoreProject(data) {
   S.worldbuilding=data.worldbuilding||''; S.outline=data.outline||'';
   S.episodeCount=data.episodeCount||15; S.episodes=data.episodes||{};
   S.characters=data.characters||[];
+  updateCharBtn();
 
   $('messages').innerHTML='';
   S.messages.forEach(m=>{
@@ -1711,6 +1771,40 @@ function extractEpOutlinesFromText(outline) {
 
 const roleLabel = {protagonist:'主角', antagonist:'反派', supporting:'配角'};
 
+function updateCharBtn() {
+  const n = S.characters.length;
+  const btn = $('char-btn');
+  const badge = $('char-count');
+  if (!btn) return;
+  if (n > 0) {
+    btn.classList.add('has-chars');
+    badge.textContent = n;
+  } else {
+    btn.classList.remove('has-chars');
+  }
+}
+
+function openCharPanel() {
+  if (!S.worldbuilding) {
+    appendMsg('system', '请先完成世界观设定，再提取角色');
+    return;
+  }
+  if (S.characters.length === 0) {
+    extractCharacters();
+    return;
+  }
+  // Ensure section exists and scroll to it
+  if (!$('char-section')) renderCharSection();
+  // If not on worldbuilding/outline view, switch to worldbuilding
+  if (!$('cbody').contains($('char-section'))) {
+    backToWorldbuilding();
+  }
+  setTimeout(() => {
+    const sec = $('char-section');
+    if (sec) sec.scrollIntoView({behavior:'smooth', block:'start'});
+  }, 60);
+}
+
 function renderCharSection() {
   let sec = $('char-section');
   if (!sec) {
@@ -1727,6 +1821,7 @@ function renderCharSection() {
     <div class="char-grid" id="char-grid"></div>`;
   const grid = $('char-grid');
   S.characters.forEach(c => grid.appendChild(makeCharCard(c)));
+  updateCharBtn();
 }
 
 function makeCharCard(c) {
@@ -1753,6 +1848,7 @@ function makeCharCard(c) {
 
 async function saveCharacters() {
   if (!S.projectId) return;
+  updateCharBtn();
   try {
     // strip transient UI state before persisting
     const toSave = S.characters.map(({generating, ...c}) => c);
@@ -1771,8 +1867,9 @@ async function extractCharacters() {
     const warn = hasImages ? '（含已生成/上传的图片将一并丢失）' : '';
     if (!confirm(`已有 ${S.characters.length} 个角色${warn}，重新提取将覆盖全部现有角色。确认继续？`)) return;
   }
-  const btn = Array.from($('toolbar').querySelectorAll('button')).find(b => b.textContent.includes('提取角色'));
-  if (btn) { btn.disabled = true; btn.textContent = '提取中…'; }
+  const btn = $('char-btn');
+  const origText = btn ? btn.innerHTML : '';
+  if (btn) { btn.disabled = true; btn.style.opacity = '.5'; }
   try {
     const resp = await fetch(`/api/project/${S.projectId}/extract-characters`, {
       method: 'POST',
@@ -1801,7 +1898,8 @@ async function extractCharacters() {
     console.error('extractCharacters failed:', e);
     appendMsg('system', `角色提取失败：${e.message}`);
   } finally {
-    if (btn) { btn.disabled = false; btn.textContent = '✦ 提取角色'; }
+    if (btn) { btn.disabled = false; btn.style.opacity = ''; }
+    updateCharBtn();
   }
 }
 
