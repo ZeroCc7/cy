@@ -1647,8 +1647,10 @@ let _genDialogCharId = null;
 
 function _buildGenPrompt(c) {
   if (c.genPrompt) return c.genPrompt;
-  const base = (c.appearance || c.name || '神秘人物').trim();
-  return `${base}，古装写实风格，人物设定图，全身正面站立，精致五官，华丽古装服饰，衣袂飘逸，细腻笔触，简洁渐变背景，高清插画`;
+  const name = c.name || '神秘人物';
+  const appearance = (c.appearance || '').trim();
+  const base = appearance ? `角色「${name}」，${appearance}` : `角色「${name}」`;
+  return `${base}。古装写实风格，人物设定图，全身正面站立，精致五官，华丽古装服饰，衣袂飘逸，细腻笔触，简洁渐变背景，高清插画`;
 }
 
 function openLightbox(url, name) {
