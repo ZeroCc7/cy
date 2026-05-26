@@ -1,16 +1,19 @@
 #!/usr/bin/env python3
+import asyncio
 import os
 import json
+import httpx
 from pathlib import Path
 from datetime import datetime
 from dotenv import load_dotenv
-from fastapi import FastAPI, Request, HTTPException
+from fastapi import FastAPI, File, Request, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse, FileResponse, JSONResponse
 from openai import OpenAI
 from supabase import create_client, Client
 from exporter import save_full_script, extract_episode_outlines
 from prompts import (OUTLINE_SYSTEM, OUTLINE_PROMPT, EPISODE_SYSTEM, EPISODE_PROMPT,
-                     REFINE_PROMPT, WORLDBUILDING_SYSTEM, WORLDBUILDING_PROMPT)
+                     REFINE_PROMPT, WORLDBUILDING_SYSTEM, WORLDBUILDING_PROMPT,
+                     CHARACTER_EXTRACT_SYSTEM, CHARACTER_EXTRACT_PROMPT)
 
 load_dotenv()
 
@@ -135,6 +138,7 @@ def _row_to_proj(row: dict) -> dict:
         "episodesDone": row.get("episodes_done", 0),
         "messages":     row.get("messages") or [],
         "episodes":     row.get("episodes") or {},
+        "characters":   row.get("characters") or [],
         "created":      row.get("created", ""),
         "updated":      row.get("updated", ""),
     }
@@ -162,6 +166,7 @@ def _save_proj(data: dict) -> str:
         "episodes_done": episodes_done,
         "messages":      data.get("messages", []),
         "episodes":      data.get("episodes", {}),
+        "characters":    data.get("characters", []),
         "created":       data.get("created") or now,
         "updated":       now,
     }).execute()
@@ -219,6 +224,10 @@ async def project_patch(pid: str, req: Request):
         }).eq("id", pid).execute()
     elif field == "chat":
         db.table("projects").update({"messages": body["messages"], "updated": now}).eq("id", pid).execute()
+    elif field == "characters":
+        db.table("projects").update({
+            "characters": body["characters"], "updated": now,
+        }).eq("id", pid).execute()
     else:
         raise HTTPException(400, f"未知 field: {field}")
     return {"ok": True}
@@ -228,6 +237,83 @@ async def project_patch(pid: str, req: Request):
 async def project_delete(pid: str):
     db.table("projects").delete().eq("id", pid).execute()
     return {"ok": True}
+
+
+# ── Characters ───────────────────────────────────────────────────────────────
+
+@app.post("/api/project/{pid}/extract-characters")
+async def extract_characters(pid: str, req: Request):
+    body = await req.json()
+    worldbuilding = body.get("worldbuilding", "")
+    prompt = CHARACTER_EXTRACT_PROMPT.format(worldbuilding=worldbuilding)
+    resp = client.chat.completions.create(
+        model=MODEL, max_tokens=1500, stream=False,
+        messages=[
+            {"role": "system", "content": CHARACTER_EXTRACT_SYSTEM},
+            {"role": "user",   "content": prompt},
+        ],
+    )
+    raw = resp.choices[0].message.content.strip()
+    if raw.startswith("```"):
+        raw = raw.split("\n", 1)[1].rsplit("```", 1)[0].strip()
+    characters = json.loads(raw)
+    return JSONResponse(characters)
+
+
+@app.post("/api/project/{pid}/characters/{cid}/upload-image")
+async def upload_character_image(pid: str, cid: str, file: UploadFile = File(...)):
+    data = await file.read()
+    path = f"{pid}/{cid}.webp"
+    db.storage.from_("character-images").upload(
+        path, data,
+        file_options={"content-type": "image/webp", "upsert": "true"},
+    )
+    url = db.storage.from_("character-images").get_public_url(path)
+    return {"url": url}
+
+
+@app.post("/api/project/{pid}/characters/{cid}/generate-image")
+async def generate_character_image(pid: str, cid: str, req: Request):
+    body = await req.json()
+    appearance = body.get("appearance", "神秘人物")
+    prompt_text = f"{appearance}，古装写实风格，精致面部，电影质感，高清竖版半身像"
+    try:
+        resp = await asyncio.to_thread(
+            client.images.generate,
+            model="wanx2.1-t2i-turbo",
+            prompt=prompt_text,
+            size="768*1024",
+            n=1,
+        )
+        image_url = resp.data[0].url
+    except Exception:
+        async with httpx.AsyncClient(timeout=60) as hc:
+            r = await hc.post(
+                "https://dashscope.aliyuncs.com/api/v1/services/aigc/text2image/image-synthesis",
+                headers={
+                    "Authorization": f"Bearer {os.environ['OPENAI_API_KEY']}",
+                    "Content-Type": "application/json",
+                    "X-DashScope-Async": "disable",
+                },
+                json={
+                    "model": "wanx2.1-t2i-turbo",
+                    "input": {"prompt": prompt_text},
+                    "parameters": {"size": "768*1024", "n": 1},
+                },
+            )
+            r.raise_for_status()
+            image_url = r.json()["output"]["results"][0]["url"]
+
+    async with httpx.AsyncClient(timeout=60) as hc:
+        img_data = (await hc.get(image_url)).content
+
+    path = f"{pid}/{cid}.webp"
+    db.storage.from_("character-images").upload(
+        path, img_data,
+        file_options={"content-type": "image/webp", "upsert": "true"},
+    )
+    public_url = db.storage.from_("character-images").get_public_url(path)
+    return {"url": public_url}
 
 
 # ── Export ────────────────────────────────────────────────────────────────────

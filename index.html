@@ -247,6 +247,73 @@ textarea:disabled{opacity:.4}
   justify-content:center;height:60vh;gap:12px}
 .home-empty p{font-size:14px;color:#3a3a50}
 .home-empty small{font-size:12px;color:#252535}
+
+/* ── Character Section ── */
+.char-section{margin-top:28px;border-top:1px solid #1e1e2a;padding-top:20px}
+.char-section-title{display:flex;align-items:center;justify-content:space-between;
+  margin-bottom:14px}
+.char-section-title h3{font-size:13px;color:#c9a96e;font-weight:600}
+.char-add-btn{font-size:11.5px;padding:4px 11px;border-radius:8px;
+  border:1px solid #2a2a38;background:transparent;color:#777;cursor:pointer;transition:all .2s}
+.char-add-btn:hover{background:#1e1e2a;color:#c9a96e;border-color:#c9a96e55}
+.char-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px}
+.char-card{background:#111120;border:1px solid #1e1e2c;border-radius:10px;
+  overflow:hidden;cursor:pointer;transition:all .18s}
+.char-card:hover{border-color:#c9a96e44;background:#17172a}
+.char-avatar{width:100%;aspect-ratio:3/4;background:#1a1a2a;
+  display:flex;align-items:center;justify-content:center;overflow:hidden}
+.char-avatar img{width:100%;height:100%;object-fit:cover}
+.char-avatar-placeholder{font-size:28px;color:#333;font-weight:700;
+  background:linear-gradient(135deg,#1a1a2a,#242438)}
+.char-info{padding:8px 10px}
+.char-name{font-size:12.5px;color:#c9a96e;font-weight:600;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:4px}
+.char-role-badge{font-size:10px;padding:1px 6px;border-radius:6px;border:1px solid}
+.char-role-badge.protagonist{color:#c9a96e;border-color:#c9a96e44;background:#c9a96e0d}
+.char-role-badge.antagonist{color:#c06060;border-color:#c0606044;background:#c060600d}
+.char-role-badge.supporting{color:#666;border-color:#2a2a38;background:transparent}
+.char-edit-btn{width:100%;padding:5px;border:none;border-top:1px solid #1e1e2a;
+  background:transparent;color:#444;font-size:11px;cursor:pointer;transition:color .15s}
+.char-edit-btn:hover{color:#c9a96e;background:#111128}
+
+/* ── Character Modal ── */
+.char-modal-overlay{position:fixed;inset:0;background:#00000088;
+  display:flex;align-items:center;justify-content:center;z-index:100}
+.char-modal{background:#13131e;border:1px solid #252535;border-radius:14px;
+  width:560px;max-width:95vw;max-height:90vh;display:flex;flex-direction:column;overflow:hidden}
+.char-modal-hdr{display:flex;align-items:center;padding:14px 18px;
+  border-bottom:1px solid #1e1e2a;flex-shrink:0}
+.char-modal-hdr h3{font-size:14px;color:#c9a96e;font-weight:600;flex:1}
+.char-modal-close{background:none;border:none;color:#444;font-size:18px;
+  cursor:pointer;padding:2px 7px;border-radius:4px;line-height:1}
+.char-modal-close:hover{color:#bbb;background:#1e1e2a}
+.char-modal-body{display:flex;gap:18px;padding:18px;overflow-y:auto;flex:1}
+.char-modal-left{width:150px;flex-shrink:0;display:flex;flex-direction:column;gap:8px}
+.char-modal-avatar{width:150px;height:200px;background:#1a1a2a;border-radius:9px;
+  display:flex;align-items:center;justify-content:center;overflow:hidden;
+  border:1px solid #252535}
+.char-modal-avatar img{width:100%;height:100%;object-fit:cover}
+.char-modal-avatar-ph{font-size:40px;color:#2a2a3a;font-weight:700}
+.char-img-btn{width:100%;padding:6px 0;border-radius:7px;border:1px solid #2a2a38;
+  background:transparent;color:#777;font-size:11.5px;cursor:pointer;transition:all .15s}
+.char-img-btn:hover{background:#1e1e2a;color:#c9a96e;border-color:#c9a96e55}
+.char-img-btn:disabled{opacity:.4;cursor:not-allowed}
+.char-modal-right{flex:1;display:flex;flex-direction:column;gap:10px}
+.char-field label{font-size:11.5px;color:#555;display:block;margin-bottom:4px}
+.char-field input,.char-field select,.char-field textarea{
+  width:100%;background:#161625;border:1px solid #252535;border-radius:8px;
+  color:#e0d8c8;font-size:13px;font-family:inherit;padding:7px 10px;outline:none}
+.char-field input:focus,.char-field select,.char-field textarea:focus{border-color:#c9a96e44}
+.char-field textarea{resize:none;height:60px;line-height:1.5}
+.char-field select option{background:#13131e}
+.char-modal-footer{display:flex;align-items:center;padding:12px 18px;
+  border-top:1px solid #1e1e2a;flex-shrink:0;gap:8px}
+.char-delete-btn{background:none;border:1px solid #3a2020;color:#884040;
+  font-size:12px;padding:5px 12px;border-radius:7px;cursor:pointer;transition:all .15s}
+.char-delete-btn:hover{background:#3a2020;color:#c06060}
+.char-save-btn{margin-left:auto;background:#c9a96e;color:#1a1208;border:none;
+  font-size:12.5px;font-weight:600;padding:6px 18px;border-radius:8px;cursor:pointer;transition:background .15s}
+.char-save-btn:hover{background:#d4b87a}
 </style>
 </head>
 <body>
@@ -355,6 +422,7 @@ const S = {
   messages:[], requirements:'', worldbuilding:'', outline:'',
   episodeCount:15, episodes:{}, generating:false,
   pendingAction:null,
+  characters:[],
 };
 
 // ── Router ──────────────────────────────────────────────────────────────────
@@ -687,7 +755,10 @@ function showWorldbuildingActions() {
     {label:'修改世界观',fn:()=>enterRefineMode({type:'worldbuilding'},'📝 修改世界观')},
     {label:'重新生成世界观',fn:startWorldbuilding},
   ]);
-  setToolbar([{label:'修改世界观',fn:()=>enterRefineMode({type:'worldbuilding'},'📝 修改世界观')}]);
+  setToolbar([
+    {label:'✦ 提取角色', fn:extractCharacters},
+    {label:'修改世界观', fn:()=>enterRefineMode({type:'worldbuilding'},'📝 修改世界观')},
+  ]);
 }
 
 function backToWorldbuilding() {
@@ -938,6 +1009,7 @@ function restoreProject(data) {
   S.messages=data.messages||[]; S.requirements=data.requirements||'';
   S.worldbuilding=data.worldbuilding||''; S.outline=data.outline||'';
   S.episodeCount=data.episodeCount||15; S.episodes=data.episodes||{};
+  S.characters=data.characters||[];
 
   $('messages').innerHTML='';
   S.messages.forEach(m=>{
@@ -951,14 +1023,17 @@ function restoreProject(data) {
     renderEpisodeGrid();
     setToolbar([{label:'全部自动生成',fn:generateAll},{label:'导出剧本文件',fn:exportProject}]);
     setChips([]);
+    if (S.characters.length > 0) renderCharSection();
   } else if(phase==='outline') {
     setStep(3); $('ctitle').textContent=`故事大纲 · ${S.episodeCount} 集`;
     $('cbody').innerHTML=`<div class="rendered">${md(S.outline)}</div>`;
     showOutlineActions();
+    if (S.characters.length > 0) renderCharSection();
   } else if(phase==='worldbuilding') {
     setStep(2); $('ctitle').textContent='世界观设定';
     $('cbody').innerHTML=`<div class="rendered">${md(S.worldbuilding)}</div>`;
     showWorldbuildingActions();
+    if (S.characters.length > 0) renderCharSection();
   } else {
     setStep(1); setChips([]);
   }
@@ -1304,6 +1379,209 @@ function extractEpOutlinesFromText(outline) {
   return result;
 }
 
+// ── Characters ───────────────────────────────────────────────────────────────
+
+const roleLabel = {protagonist:'主角', antagonist:'反派', supporting:'配角'};
+
+function renderCharSection() {
+  let sec = $('char-section');
+  if (!sec) {
+    sec = document.createElement('div');
+    sec.id = 'char-section';
+    sec.className = 'char-section';
+    $('cbody').appendChild(sec);
+  }
+  sec.innerHTML = `
+    <div class="char-section-title">
+      <h3>角色设定（${S.characters.length}）</h3>
+      <button class="char-add-btn" onclick="addNewChar()">+ 新增角色</button>
+    </div>
+    <div class="char-grid" id="char-grid"></div>`;
+  const grid = $('char-grid');
+  S.characters.forEach(c => grid.appendChild(makeCharCard(c)));
+}
+
+function makeCharCard(c) {
+  const card = document.createElement('div');
+  card.className = 'char-card';
+  card.id = `cc-${c.id}`;
+  const avatarInner = c.imageUrl
+    ? `<img src="${c.imageUrl}" alt="${c.name}">`
+    : `<span class="char-avatar-placeholder">${c.name.charAt(0)}</span>`;
+  card.innerHTML = `
+    <div class="char-avatar">${avatarInner}</div>
+    <div class="char-info">
+      <div class="char-name">${c.name}</div>
+      <span class="char-role-badge ${c.role}">${roleLabel[c.role] || c.role}</span>
+    </div>
+    <button class="char-edit-btn" onclick="openCharModal('${c.id}');event.stopPropagation()">编辑</button>`;
+  return card;
+}
+
+async function saveCharacters() {
+  if (!S.projectId) return;
+  try {
+    await fetch(`/api/project/${S.projectId}`, {
+      method: 'PATCH',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({field: 'characters', characters: S.characters}),
+    });
+  } catch { /* 静默失败 */ }
+}
+
+async function extractCharacters() {
+  if (!S.worldbuilding) return;
+  const btn = document.querySelector('[onclick="extractCharacters()"]');
+  if (btn) { btn.disabled = true; btn.textContent = '提取中…'; }
+  try {
+    const resp = await fetch(`/api/project/${S.projectId}/extract-characters`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({worldbuilding: S.worldbuilding}),
+    });
+    const list = await resp.json();
+    S.characters = list.map((c, i) => ({
+      id: c.id || `char_${Date.now()}_${i}`,
+      name: c.name || '未命名',
+      role: ['protagonist','antagonist','supporting'].includes(c.role) ? c.role : 'supporting',
+      personality: c.personality || '',
+      appearance: c.appearance || '',
+      imageUrl: null,
+    }));
+    renderCharSection();
+    await saveCharacters();
+  } catch {
+    appendMsg('system', '角色提取失败，请重试');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '✦ 提取角色'; }
+  }
+}
+
+let _editingCharId = null;
+
+function openCharModal(charId) {
+  const c = S.characters.find(x => x.id === charId);
+  if (!c) return;
+  _editingCharId = charId;
+  $('char-modal-title').textContent = '编辑角色';
+  $('char-f-name').value        = c.name;
+  $('char-f-role').value        = c.role;
+  $('char-f-personality').value = c.personality;
+  $('char-f-appearance').value  = c.appearance;
+  _refreshModalAvatar(c.imageUrl, c.name);
+  $('char-delete-btn').style.display = '';
+  $('char-modal-overlay').style.display = 'flex';
+}
+
+function addNewChar() {
+  const newChar = {
+    id: `char_${Date.now()}`,
+    name: '新角色', role: 'supporting',
+    personality: '', appearance: '', imageUrl: null,
+  };
+  S.characters.push(newChar);
+  _editingCharId = newChar.id;
+  $('char-modal-title').textContent = '新增角色';
+  $('char-f-name').value        = newChar.name;
+  $('char-f-role').value        = newChar.role;
+  $('char-f-personality').value = '';
+  $('char-f-appearance').value  = '';
+  _refreshModalAvatar(null, newChar.name);
+  $('char-delete-btn').style.display = '';
+  $('char-modal-overlay').style.display = 'flex';
+}
+
+function closeCharModal() {
+  $('char-modal-overlay').style.display = 'none';
+  _editingCharId = null;
+}
+
+function _refreshModalAvatar(imageUrl, name) {
+  const av = $('char-modal-avatar');
+  if (imageUrl) {
+    av.innerHTML = `<img src="${imageUrl}" alt="${name}">`;
+  } else {
+    av.innerHTML = `<span class="char-modal-avatar-ph">${(name||'?').charAt(0)}</span>`;
+  }
+}
+
+async function saveCharModal() {
+  const idx = S.characters.findIndex(x => x.id === _editingCharId);
+  if (idx === -1) return;
+  S.characters[idx] = {
+    ...S.characters[idx],
+    name:        $('char-f-name').value.trim() || '未命名',
+    role:        $('char-f-role').value,
+    personality: $('char-f-personality').value.trim(),
+    appearance:  $('char-f-appearance').value.trim(),
+  };
+  closeCharModal();
+  renderCharSection();
+  await saveCharacters();
+}
+
+async function deleteCharFromModal() {
+  if (!_editingCharId) return;
+  if (!confirm('确认删除此角色？')) return;
+  S.characters = S.characters.filter(x => x.id !== _editingCharId);
+  closeCharModal();
+  renderCharSection();
+  await saveCharacters();
+}
+
+async function uploadCharImage(input) {
+  if (!input.files[0] || !_editingCharId || !S.projectId) return;
+  const btn = input.previousElementSibling;
+  btn.disabled = true; btn.textContent = '上传中…';
+  const fd = new FormData();
+  fd.append('file', input.files[0]);
+  try {
+    const resp = await fetch(
+      `/api/project/${S.projectId}/characters/${_editingCharId}/upload-image`,
+      {method: 'POST', body: fd}
+    );
+    const {url} = await resp.json();
+    const idx = S.characters.findIndex(x => x.id === _editingCharId);
+    if (idx !== -1) S.characters[idx].imageUrl = url;
+    _refreshModalAvatar(url, S.characters[idx]?.name || '');
+    await saveCharacters();
+    renderCharSection();
+  } catch {
+    alert('图片上传失败，请重试');
+  } finally {
+    btn.disabled = false; btn.textContent = '上传图片';
+    input.value = '';
+  }
+}
+
+async function generateCharImage() {
+  if (!_editingCharId || !S.projectId) return;
+  const appearance = $('char-f-appearance').value.trim();
+  if (!appearance) { alert('请先填写外貌描述'); return; }
+  const btn = $('char-gen-btn');
+  btn.disabled = true; btn.textContent = '生成中…';
+  try {
+    const resp = await fetch(
+      `/api/project/${S.projectId}/characters/${_editingCharId}/generate-image`,
+      {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({appearance}),
+      }
+    );
+    const {url} = await resp.json();
+    const idx = S.characters.findIndex(x => x.id === _editingCharId);
+    if (idx !== -1) S.characters[idx].imageUrl = url;
+    _refreshModalAvatar(url, S.characters[idx]?.name || '');
+    await saveCharacters();
+    renderCharSection();
+  } catch {
+    alert('图片生成失败，请检查外貌描述或稍后重试');
+  } finally {
+    btn.disabled = false; btn.textContent = '✦ AI 生成图';
+  }
+}
+
 // ══════════════════════════════════════════════════════════════════
 //  Markdown renderer
 // ══════════════════════════════════════════════════════════════════
@@ -1337,5 +1615,53 @@ function md(t) {
     }).join('');
 }
 </script>
+
+<!-- ── Character Modal ── -->
+<div class="char-modal-overlay" id="char-modal-overlay" style="display:none"
+     onclick="if(event.target===this)closeCharModal()">
+  <div class="char-modal">
+    <div class="char-modal-hdr">
+      <h3 id="char-modal-title">编辑角色</h3>
+      <button class="char-modal-close" onclick="closeCharModal()">✕</button>
+    </div>
+    <div class="char-modal-body">
+      <div class="char-modal-left">
+        <div class="char-modal-avatar" id="char-modal-avatar">
+          <span class="char-modal-avatar-ph" id="char-modal-avatar-ph">?</span>
+        </div>
+        <input type="file" id="char-file-input" accept="image/*" style="display:none"
+               onchange="uploadCharImage(this)">
+        <button class="char-img-btn" onclick="$('char-file-input').click()">上传图片</button>
+        <button class="char-img-btn" id="char-gen-btn" onclick="generateCharImage()">✦ AI 生成图</button>
+      </div>
+      <div class="char-modal-right">
+        <div class="char-field">
+          <label>姓名</label>
+          <input id="char-f-name" type="text" placeholder="角色姓名">
+        </div>
+        <div class="char-field">
+          <label>定位</label>
+          <select id="char-f-role">
+            <option value="protagonist">主角</option>
+            <option value="antagonist">反派</option>
+            <option value="supporting">配角</option>
+          </select>
+        </div>
+        <div class="char-field">
+          <label>性格</label>
+          <textarea id="char-f-personality" placeholder="性格描述，30字内"></textarea>
+        </div>
+        <div class="char-field">
+          <label>外貌描述</label>
+          <textarea id="char-f-appearance" placeholder="外貌特征，40字内，用于 AI 生图"></textarea>
+        </div>
+      </div>
+    </div>
+    <div class="char-modal-footer">
+      <button class="char-delete-btn" id="char-delete-btn" onclick="deleteCharFromModal()">删除角色</button>
+      <button class="char-save-btn" onclick="saveCharModal()">保存</button>
+    </div>
+  </div>
+</div>
 </body>
 </html>
