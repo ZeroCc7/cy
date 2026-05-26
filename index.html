@@ -1461,6 +1461,11 @@ async function saveCharacters() {
 
 async function extractCharacters() {
   if (!S.worldbuilding) return;
+  if (S.characters.length > 0) {
+    const hasImages = S.characters.some(c => c.imageUrl);
+    const warn = hasImages ? '（含已生成/上传的图片将一并丢失）' : '';
+    if (!confirm(`已有 ${S.characters.length} 个角色${warn}，重新提取将覆盖全部现有角色。确认继续？`)) return;
+  }
   const btn = Array.from($('toolbar').querySelectorAll('button')).find(b => b.textContent.includes('提取角色'));
   if (btn) { btn.disabled = true; btn.textContent = '提取中…'; }
   try {
@@ -1700,7 +1705,8 @@ function md(t) {
     <div class="gen-field">
       <label>模型</label>
       <select id="gen-model">
-        <option value="wan2.1-t2i-turbo">万象 2.1 Turbo</option>
+        <option value="wan2.7-image-pro">万象 2.7 Pro</option>
+        <option value="wan2.7-image">万象 2.7</option>
       </select>
     </div>
     <div class="gen-dialog-footer">
