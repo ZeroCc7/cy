@@ -289,7 +289,9 @@ async def upload_character_image(pid: str, cid: str, file: UploadFile = File(...
 async def generate_character_image(pid: str, cid: str, req: Request):
     body = await req.json()
     appearance = body.get("appearance", "神秘人物")
-    prompt_text = (
+    model = body.get("model", "wan2.1-t2i-turbo")
+    custom_prompt = (body.get("prompt") or "").strip()
+    prompt_text = custom_prompt if custom_prompt else (
         f"{appearance}，古装写实风格，人物设定图，全身正面站立，"
         "精致五官，华丽古装服饰，衣袂飘逸，细腻笔触，简洁渐变背景，高清插画"
     )
@@ -297,7 +299,7 @@ async def generate_character_image(pid: str, cid: str, req: Request):
     def _generate_sync() -> str:
         msg = DSMessage(role="user", content=[{"text": prompt_text}])
         task = DSImageGen.async_call(
-            model="wan2.1-t2i-turbo",
+            model=model,
             api_key=DASHSCOPE_API_KEY,
             messages=[msg],
             watermark=False,

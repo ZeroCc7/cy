@@ -261,7 +261,30 @@ textarea:disabled{opacity:.4}
   overflow:hidden;cursor:pointer;transition:all .18s}
 .char-card:hover{border-color:#c9a96e44;background:#17172a}
 .char-avatar{width:100%;aspect-ratio:3/4;background:#1a1a2a;
-  display:flex;align-items:center;justify-content:center;overflow:hidden}
+  display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative}
+.char-generating-overlay{position:absolute;inset:0;background:#0a0a1899;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px;color:#c9a96e;font-size:11px}
+@keyframes spin{to{transform:rotate(360deg)}}
+.char-spinner{width:22px;height:22px;border:2px solid #c9a96e33;border-top-color:#c9a96e;
+  border-radius:50%;animation:spin .8s linear infinite;flex-shrink:0}
+/* ── Gen Dialog ── */
+.gen-dialog-overlay{position:fixed;inset:0;background:#00000088;
+  display:flex;align-items:center;justify-content:center;z-index:200}
+.gen-dialog{background:#13131e;border:1px solid #252535;border-radius:12px;
+  width:440px;max-width:95vw;padding:20px;display:flex;flex-direction:column;gap:14px}
+.gen-dialog h4{font-size:14px;color:#c9a96e;font-weight:600;margin:0}
+.gen-field label{font-size:11.5px;color:#555;display:block;margin-bottom:5px}
+.gen-field textarea,.gen-field select{width:100%;background:#161625;border:1px solid #252535;
+  border-radius:8px;color:#e0d8c8;font-size:12.5px;font-family:inherit;padding:8px 10px;outline:none}
+.gen-field textarea{resize:vertical;min-height:80px;line-height:1.55}
+.gen-field select option{background:#13131e}
+.gen-dialog-footer{display:flex;justify-content:flex-end;gap:8px;margin-top:2px}
+.gen-cancel-btn{background:none;border:1px solid #2a2a38;color:#666;
+  padding:6px 14px;border-radius:7px;font-size:12.5px;cursor:pointer;transition:all .15s}
+.gen-cancel-btn:hover{background:#1e1e2a;color:#bbb}
+.gen-confirm-btn{background:#c9a96e;color:#1a1208;border:none;
+  font-size:12.5px;font-weight:600;padding:6px 20px;border-radius:7px;cursor:pointer;transition:background .15s}
+.gen-confirm-btn:hover{background:#d4b87a}
 .char-avatar img{width:100%;height:100%;object-fit:cover}
 .char-avatar-placeholder{font-size:28px;color:#333;font-weight:700;
   background:linear-gradient(135deg,#1a1a2a,#242438)}
@@ -1403,11 +1426,16 @@ function renderCharSection() {
 
 function makeCharCard(c) {
   const card = document.createElement('div');
-  card.className = 'char-card';
+  card.className = 'char-card' + (c.generating ? ' generating' : '');
   card.id = `cc-${c.id}`;
-  const avatarInner = c.imageUrl
-    ? `<img src="${c.imageUrl}" alt="${c.name}">`
-    : `<span class="char-avatar-placeholder">${c.name.charAt(0)}</span>`;
+  let avatarInner;
+  if (c.generating) {
+    avatarInner = `<div class="char-generating-overlay"><span class="char-spinner"></span><span>生成中…</span></div>`;
+  } else if (c.imageUrl) {
+    avatarInner = `<img src="${c.imageUrl}" alt="${c.name}">`;
+  } else {
+    avatarInner = `<span class="char-avatar-placeholder">${c.name.charAt(0)}</span>`;
+  }
   card.innerHTML = `
     <div class="char-avatar">${avatarInner}</div>
     <div class="char-info">
@@ -1421,10 +1449,12 @@ function makeCharCard(c) {
 async function saveCharacters() {
   if (!S.projectId) return;
   try {
+    // strip transient UI state before persisting
+    const toSave = S.characters.map(({generating, ...c}) => c);
     await fetch(`/api/project/${S.projectId}`, {
       method: 'PATCH',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({field: 'characters', characters: S.characters}),
+      body: JSON.stringify({field: 'characters', characters: toSave}),
     });
   } catch { /* 静默失败 */ }
 }
@@ -1475,6 +1505,9 @@ function openCharModal(charId) {
   $('char-f-personality').value = c.personality;
   $('char-f-appearance').value  = c.appearance;
   _refreshModalAvatar(c.imageUrl, c.name);
+  // disable gen button if image already exists or is generating
+  const genBtn = $('char-gen-btn');
+  if (genBtn) genBtn.disabled = !!(c.imageUrl || c.generating);
   $('char-delete-btn').style.display = '';
   $('char-modal-overlay').style.display = 'flex';
 }
@@ -1560,32 +1593,63 @@ async function uploadCharImage(input) {
   }
 }
 
-async function generateCharImage() {
-  if (!_editingCharId || !S.projectId) return;
-  const appearance = $('char-f-appearance').value.trim();
-  if (!appearance) { alert('请先填写外貌描述'); return; }
-  const btn = $('char-gen-btn');
-  btn.disabled = true; btn.textContent = '生成中…';
-  try {
-    const resp = await fetch(
-      `/api/project/${S.projectId}/characters/${_editingCharId}/generate-image`,
-      {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({appearance}),
-      }
-    );
-    const {url} = await resp.json();
-    const idx = S.characters.findIndex(x => x.id === _editingCharId);
-    if (idx !== -1) S.characters[idx].imageUrl = url;
-    _refreshModalAvatar(url, S.characters[idx]?.name || '');
-    await saveCharacters();
+let _genDialogCharId = null;
+
+function _buildGenPrompt(c) {
+  const base = (c.appearance || c.name || '神秘人物').trim();
+  return `${base}，古装写实风格，人物设定图，全身正面站立，精致五官，华丽古装服饰，衣袂飘逸，细腻笔触，简洁渐变背景，高清插画`;
+}
+
+function openGenDialog() {
+  if (!_editingCharId) return;
+  const c = S.characters.find(x => x.id === _editingCharId);
+  if (!c || c.imageUrl || c.generating) return;
+  _genDialogCharId = _editingCharId;
+  $('gen-prompt').value = _buildGenPrompt(c);
+  $('gen-dialog-overlay').style.display = 'flex';
+}
+
+function closeGenDialog() {
+  $('gen-dialog-overlay').style.display = 'none';
+  _genDialogCharId = null;
+}
+
+function confirmGenImage() {
+  const cid = _genDialogCharId;
+  if (!cid || !S.projectId) return;
+  const prompt = $('gen-prompt').value.trim();
+  const model  = $('gen-model').value;
+  const idx = S.characters.findIndex(x => x.id === cid);
+  if (idx === -1) return;
+
+  closeGenDialog();
+
+  S.characters[idx].generating = true;
+  renderCharSection();
+  const genBtn = $('char-gen-btn');
+  if (genBtn && _editingCharId === cid) genBtn.disabled = true;
+
+  fetch(`/api/project/${S.projectId}/characters/${cid}/generate-image`, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({appearance: S.characters[idx]?.appearance || '', prompt, model}),
+  })
+  .then(r => r.ok ? r.json() : r.text().then(t => { throw new Error(`HTTP ${r.status}: ${t}`); }))
+  .then(({url}) => {
+    const i = S.characters.findIndex(x => x.id === cid);
+    if (i !== -1) { S.characters[i].imageUrl = url; S.characters[i].generating = false; }
     renderCharSection();
-  } catch {
-    alert('图片生成失败，请检查外貌描述或稍后重试');
-  } finally {
-    btn.disabled = false; btn.textContent = '✦ AI 生成图';
-  }
+    if (_editingCharId === cid) _refreshModalAvatar(url, S.characters[i]?.name || '');
+    saveCharacters();
+  })
+  .catch(e => {
+    console.error('generate-image failed:', e);
+    const i = S.characters.findIndex(x => x.id === cid);
+    if (i !== -1) S.characters[i].generating = false;
+    renderCharSection();
+    if (_editingCharId === cid && $('char-gen-btn')) $('char-gen-btn').disabled = false;
+    alert(`图片生成失败：${e.message}`);
+  });
 }
 
 // ══════════════════════════════════════════════════════════════════
@@ -1622,6 +1686,28 @@ function md(t) {
 }
 </script>
 
+<!-- ── Gen Image Dialog ── -->
+<div class="gen-dialog-overlay" id="gen-dialog-overlay" style="display:none"
+     onclick="if(event.target===this)closeGenDialog()">
+  <div class="gen-dialog">
+    <h4>生成角色设定图</h4>
+    <div class="gen-field">
+      <label>提示词</label>
+      <textarea id="gen-prompt" placeholder="描述角色外貌特征…"></textarea>
+    </div>
+    <div class="gen-field">
+      <label>模型</label>
+      <select id="gen-model">
+        <option value="wan2.1-t2i-turbo">万象 2.1 Turbo</option>
+      </select>
+    </div>
+    <div class="gen-dialog-footer">
+      <button class="gen-cancel-btn" onclick="closeGenDialog()">取消</button>
+      <button class="gen-confirm-btn" onclick="confirmGenImage()">✦ 生成</button>
+    </div>
+  </div>
+</div>
+
 <!-- ── Character Modal ── -->
 <div class="char-modal-overlay" id="char-modal-overlay" style="display:none"
      onclick="if(event.target===this)closeCharModal()">
@@ -1638,7 +1724,7 @@ function md(t) {
         <input type="file" id="char-file-input" accept="image/*" style="display:none"
                onchange="uploadCharImage(this)">
         <button class="char-img-btn" onclick="$('char-file-input').click()">上传图片</button>
-        <button class="char-img-btn" id="char-gen-btn" onclick="generateCharImage()">✦ AI 生成图</button>
+        <button class="char-img-btn" id="char-gen-btn" onclick="openGenDialog()">✦ AI 生成图</button>
       </div>
       <div class="char-modal-right">
         <div class="char-field">
