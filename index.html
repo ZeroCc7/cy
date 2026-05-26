@@ -78,55 +78,58 @@ header h1::before{
 .step-arrow{color:var(--line-3);font-size:9px}
 
 /* Header button groups */
-.hdr-actions{display:flex;align-items:center;gap:6px;margin-left:14px;flex-shrink:0}
-.hdr-divider{width:1px;height:18px;background:var(--line-3);margin:0 2px;flex-shrink:0}
+.hdr-actions{display:flex;align-items:center;gap:5px;margin-left:14px;flex-shrink:0}
+.hdr-divider{width:1px;height:18px;background:var(--line-3);margin:0 3px;flex-shrink:0}
 
-/* Ghost button (tertiary) */
+/* Back / ghost — minimal, only used for ← 首页 */
 .hdr-btn{
-  display:flex;align-items:center;gap:5px;padding:5px 11px;
-  border-radius:var(--r-sm);border:none;background:transparent;
-  color:var(--txt-2);font-size:12px;font-family:inherit;
-  cursor:pointer;transition:all .18s;white-space:nowrap
+  display:flex;align-items:center;gap:5px;padding:5px 10px;
+  border-radius:var(--r-sm);border:1px solid var(--line-2);
+  background:var(--surf-2);color:var(--txt-1);
+  font-size:12px;font-family:inherit;cursor:pointer;
+  transition:all .18s;white-space:nowrap;opacity:.75
 }
-.hdr-btn:hover{background:var(--surf-3);color:var(--txt-1)}
-.hdr-btn.active{background:var(--surf-3);color:var(--gold)}
+.hdr-btn:hover{opacity:1;border-color:var(--line-3);background:var(--surf-3)}
+.hdr-btn.active{opacity:1;background:var(--surf-3);color:var(--gold);border-color:var(--gold-dim)}
 
-/* Outlined secondary button */
+/* Secondary — clearly a button, no gold yet */
 .hdr-btn-outline{
   display:flex;align-items:center;gap:5px;padding:5px 12px;
-  border-radius:var(--r-sm);border:1px solid var(--line-3);background:transparent;
-  color:var(--txt-2);font-size:12px;font-family:inherit;
-  cursor:pointer;transition:all .18s;white-space:nowrap
+  border-radius:var(--r-sm);border:1px solid var(--line-3);
+  background:var(--surf-2);color:var(--txt-1);
+  font-size:12px;font-family:inherit;cursor:pointer;transition:all .18s;white-space:nowrap
 }
 .hdr-btn-outline:hover{
-  background:var(--surf-3);color:var(--gold);
-  border-color:var(--gold-dim)
+  background:var(--surf-3);color:var(--gold);border-color:var(--gold-dim)
 }
 .hdr-btn-outline.active{
   background:var(--surf-3);color:var(--gold);border-color:var(--gold-dim)
 }
 
-/* Primary solid button */
+/* Primary solid */
 .primary-hdr-btn{
   display:flex;align-items:center;gap:5px;padding:5px 14px;
   border-radius:var(--r-sm);border:none;
   background:var(--gold);color:#0e0a02;font-size:12px;font-weight:700;
   font-family:inherit;cursor:pointer;transition:all .18s;white-space:nowrap
 }
-.primary-hdr-btn:hover{background:var(--gold-lt);box-shadow:0 2px 12px #c8a95e35}
+.primary-hdr-btn:hover{background:var(--gold-lt);box-shadow:0 2px 12px #c8a95e40}
 
-/* Character button with count badge */
+/* Character button — always gold-tinted so it stands out */
 .hdr-char-btn{
   display:flex;align-items:center;gap:5px;padding:5px 12px;
-  border-radius:var(--r-sm);border:1px solid var(--line-3);background:transparent;
-  color:var(--txt-2);font-size:12px;font-family:inherit;
-  cursor:pointer;transition:all .18s;white-space:nowrap
+  border-radius:var(--r-sm);
+  border:1px solid var(--gold-dim);
+  background:var(--gold-faint);
+  color:var(--gold);
+  font-size:12px;font-family:inherit;cursor:pointer;transition:all .18s;white-space:nowrap
 }
 .hdr-char-btn:hover{
-  background:var(--surf-3);color:var(--gold);border-color:var(--gold-dim)
+  background:var(--gold-dim);border-color:var(--gold);
+  box-shadow:0 0 10px var(--gold-faint)
 }
 .hdr-char-btn.has-chars{
-  border-color:var(--gold-dim);color:var(--gold)
+  background:var(--gold-dim);border-color:var(--gold)
 }
 .char-count-badge{
   display:inline-flex;align-items:center;justify-content:center;
