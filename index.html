@@ -150,13 +150,50 @@ header h1::before{
 /* ── Layout ─────────────────────────────────────────────────────── */
 .layout{display:flex;flex:1;overflow:hidden}
 
-/* 聊天阶段：chat panel 独占全宽，居中 */
-.layout.chat-focus{justify-content:center}
+/* ── Chat-focus: full-screen conversation mode ───────────────────── */
+.layout.chat-focus{justify-content:center;background:var(--bg)}
 .layout.chat-focus .chat-panel{
-  width:100%;max-width:700px;border-right:none;
-  border-radius:0;transition:max-width .3s ease
+  width:100%;max-width:760px;border-right:none;background:transparent
 }
 .layout.chat-focus .content-panel{display:none}
+
+/* Messages: more breathing room */
+.layout.chat-focus .messages{
+  padding:36px 52px;gap:22px
+}
+.layout.chat-focus .msg{max-width:78%}
+.layout.chat-focus .bubble{
+  font-size:14.5px;padding:12px 17px;line-height:1.82
+}
+.layout.chat-focus .msg.assistant .bubble{
+  background:var(--surf-1);border-color:var(--line-2)
+}
+
+/* Composer input box — borderless textarea inside a styled container */
+.layout.chat-focus .chat-footer{
+  padding:0 44px 32px;border-top:none;background:transparent;gap:10px
+}
+.layout.chat-focus .chips-row{padding:0 4px}
+.layout.chat-focus .input-row{
+  background:var(--surf-1);border:1px solid var(--line-3);
+  border-radius:18px;padding:10px 10px 10px 18px;
+  box-shadow:0 4px 24px #00000055;
+  transition:border-color .2s,box-shadow .2s;align-items:flex-end
+}
+.layout.chat-focus .input-row:focus-within{
+  border-color:color-mix(in srgb,var(--gold) 40%,transparent);
+  box-shadow:0 4px 24px #00000055,0 0 0 3px var(--gold-faint)
+}
+.layout.chat-focus .input-row textarea{
+  border:none;background:transparent;
+  box-shadow:none;min-height:60px;padding:4px 0;font-size:14.5px
+}
+.layout.chat-focus .input-row textarea:focus{
+  border:none;box-shadow:none
+}
+.layout.chat-focus .send-btn{
+  width:42px;height:42px;border-radius:13px;flex-shrink:0
+}
 
 /* ── Chat Panel ─────────────────────────────────────────────────── */
 .chat-panel{
@@ -752,7 +789,7 @@ textarea:disabled{opacity:.35}
       <div class="chips-row" id="chips"></div>
       <div id="refine-hint" style="display:none"></div>
       <div class="input-row">
-        <textarea id="input" rows="1" placeholder="描述你的故事想法…"></textarea>
+        <textarea id="input" rows="3" placeholder="描述你的故事想法…"></textarea>
         <button class="send-btn" id="send-btn" onclick="handleSend()">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
             <line x1="22" y1="2" x2="11" y2="13"/>
