@@ -150,6 +150,14 @@ header h1::before{
 /* ── Layout ─────────────────────────────────────────────────────── */
 .layout{display:flex;flex:1;overflow:hidden}
 
+/* 聊天阶段：chat panel 独占全宽，居中 */
+.layout.chat-focus{justify-content:center}
+.layout.chat-focus .chat-panel{
+  width:100%;max-width:700px;border-right:none;
+  border-radius:0;transition:max-width .3s ease
+}
+.layout.chat-focus .content-panel{display:none}
+
 /* ── Chat Panel ─────────────────────────────────────────────────── */
 .chat-panel{
   display:flex;flex-direction:column;width:390px;flex-shrink:0;
@@ -196,7 +204,8 @@ textarea{
   flex:1;background:var(--surf-2);border:1px solid var(--line-3);
   border-radius:var(--r-md);color:var(--txt-1);font-size:13.5px;
   font-family:inherit;padding:9px 13px;resize:none;outline:none;
-  line-height:1.55;max-height:40vh;transition:border-color .2s,box-shadow .2s
+  line-height:1.55;min-height:72px;max-height:40vh;
+  transition:border-color .2s,box-shadow .2s
 }
 textarea:focus{border-color:color-mix(in srgb,var(--gold) 35%,transparent);
   box-shadow:0 0 0 3px var(--gold-faint)}
@@ -889,6 +898,7 @@ function initNewProject() {
   $('refine-hint').style.display = 'none';
   closeHistory();
   setStep(1);
+  document.querySelector('.layout').classList.add('chat-focus');
   appendMsg('assistant',
     '你好！我是你的短视频剧本助手，专注古装/玄幻类型 ✨\n\n先聊聊你想要什么样的故事——\n\n你的主角是什么人？有什么特别的身份或能力？');
   $input().value = ''; $input().style.height = 'auto'; $input().focus();
@@ -1114,6 +1124,7 @@ function showReadyChips() {
 
 async function startWorldbuilding() {
   S.episodeCount=parseInt($('ep-count')?.value||15);
+  document.querySelector('.layout').classList.remove('chat-focus');
   setChips([]); setStep(2);
   const sumMsgs=[...S.messages,{role:'user',
     content:'请用150字内总结我的故事需求：主角、世界观类型、核心矛盾、情感基调、爽点关键词。直接输出，不要寒暄。'}];
@@ -1413,6 +1424,9 @@ function restoreProject(data) {
   S.episodeCount=data.episodeCount||15; S.episodes=data.episodes||{};
   S.characters=data.characters||[];
   updateCharBtn();
+  const layout = document.querySelector('.layout');
+  if (S.phase === 'chat') layout.classList.add('chat-focus');
+  else layout.classList.remove('chat-focus');
 
   $('messages').innerHTML='';
   S.messages.forEach(m=>{
