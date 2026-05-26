@@ -1482,6 +1482,7 @@ async function extractCharacters() {
       personality: c.personality || '',
       appearance: c.appearance || '',
       imageUrl: null,
+      genPrompt: c.genPrompt || '',
     }));
     renderCharSection();
     await saveCharacters();
@@ -1516,7 +1517,7 @@ function addNewChar() {
   const newChar = {
     id: `char_${Date.now()}`,
     name: '新角色', role: 'supporting',
-    personality: '', appearance: '', imageUrl: null,
+    personality: '', appearance: '', imageUrl: null, genPrompt: '',
   };
   S.characters.push(newChar);
   _editingCharId = newChar.id;
@@ -1596,6 +1597,7 @@ async function uploadCharImage(input) {
 let _genDialogCharId = null;
 
 function _buildGenPrompt(c) {
+  if (c.genPrompt) return c.genPrompt;
   const base = (c.appearance || c.name || '神秘人物').trim();
   return `${base}，古装写实风格，人物设定图，全身正面站立，精致五官，华丽古装服饰，衣袂飘逸，细腻笔触，简洁渐变背景，高清插画`;
 }
