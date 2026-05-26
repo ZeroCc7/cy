@@ -1353,13 +1353,17 @@ async function doRefineContent(target, feedback) {
 // ── Steps ──
 function setStep(n) {
   S.phase=['chat','worldbuilding','outline','episodes'][n-1];
+  // clickable[i] = true 时该步骤显示为 done（绿色胶囊，可点击跳回）
+  const hasEp = S.outline && (n===4 || Object.keys(S.episodes).length > 0);
+  const clickable = [false, !!S.worldbuilding, !!S.outline, !!hasEp];
   ['s1','s2','s3','s4'].forEach((id,i)=>{
-    $(id).className='step'+(i+1<n?' done':i+1===n?' active':'');
-    $(id).title = i+1 < n ? '点击返回此步骤' : '';
+    const active = i+1 === n;
+    $(id).className = 'step' + (active ? ' active' : clickable[i] ? ' done' : '');
+    $(id).title = (!active && clickable[i]) ? '点击返回此步骤' : '';
   });
   $('s2').onclick = S.worldbuilding ? backToWorldbuilding : null;
   $('s3').onclick = S.outline        ? backToOutline       : null;
-  $('s4').onclick = S.outline && (S.phase==='episodes'||Object.keys(S.episodes).length) ? backToEpisodes : null;
+  $('s4').onclick = hasEp            ? backToEpisodes      : null;
 }
 
 function backToEpisodes() {
