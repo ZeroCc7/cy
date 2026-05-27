@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>短视频剧本生成器</title>
+<script>(function(){var t=localStorage.getItem('cy-theme')||'dark';document.documentElement.dataset.theme=t;}());</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -35,6 +36,52 @@
   --blue:     #5878b8;
   --r-xs:5px;--r-sm:9px;--r-md:13px;--r-lg:18px;
 }
+/* ── Light Theme ────────────────────────────────────────────────── */
+[data-theme="light"]{
+  /* Warm parchment surfaces — no purple cast, mirrors dark's warmth */
+  --bg:        #ede8df;
+  --surf-1:    #f8f4ed;
+  --surf-2:    #ede8df;
+  --surf-3:    #e2dccf;
+  --surf-4:    #d4ccbc;
+  --line-1:    #e2dcd0;
+  --line-2:    #cfc8b8;
+  --line-3:    #b8ae9e;
+  /* Deep amber — readable as text on light surfaces */
+  --gold:      #9a6a00;
+  --gold-lt:   #b07e14;
+  --gold-dim:  #9a6a0030;
+  --gold-faint:#9a6a000e;
+  /* Dark warm text hierarchy */
+  --txt-1:     #1c1710;
+  --txt-2:     #564838;
+  --txt-3:     #8a7868;
+  --txt-4:     #c0b09c;
+  --danger:    #a83030;
+  --safe:      #2e7040;
+  --blue:      #2858a0;
+}
+/* CTA buttons carry gold bg — need light text in light mode for contrast */
+[data-theme="light"] .primary-hdr-btn,
+[data-theme="light"] .char-panel-extract-btn,
+[data-theme="light"] .gen-confirm-btn {
+  color: #fef5e0;
+}
+/* ctab done+active: hardcoded dark green bg needs light override */
+[data-theme="light"] .ctab.done.active{
+  background:color-mix(in srgb,var(--safe) 18%,transparent);
+  border-color:color-mix(in srgb,var(--safe) 50%,transparent);
+  color:var(--safe)
+}
+
+/* ── Theme Toggle Button ─────────────────────────────────────────── */
+.theme-btn{
+  width:30px;height:30px;display:flex;align-items:center;justify-content:center;
+  background:none;border:1px solid var(--line-2);border-radius:var(--r-xs);
+  color:var(--txt-2);cursor:pointer;transition:all .18s;flex-shrink:0
+}
+.theme-btn:hover{background:var(--surf-3);color:var(--txt-1);border-color:var(--line-3)}
+
 /* ── Reset & Base ───────────────────────────────────────────────── */
 *{box-sizing:border-box;margin:0;padding:0}
 body{
@@ -819,6 +866,9 @@ textarea:disabled{opacity:.35}
 
     <div class="hdr-divider" id="hdr-div-creation" style="display:none"></div>
 
+    <button class="theme-btn" id="theme-btn" onclick="toggleTheme()"></button>
+    <div class="hdr-divider"></div>
+
     <button class="hdr-btn-outline" id="history-btn" onclick="toggleHistory()">
       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <polyline points="12 8 12 12 14 14"/>
@@ -1007,7 +1057,7 @@ async function router() {
 }
 
 window.addEventListener('hashchange', router);
-window.addEventListener('load', router);
+window.addEventListener('load', () => { router(); updateThemeBtn(); });
 
 // ── Creation Page Init ───────────────────────────────────────────────────────
 
@@ -1949,6 +1999,28 @@ function extractEpOutlinesFromText(outline) {
 // ── Characters ───────────────────────────────────────────────────────────────
 
 const roleLabel = {protagonist:'主角', antagonist:'反派', supporting:'配角'};
+
+// ── Theme ────────────────────────────────────────────────────────────────────
+
+function toggleTheme() {
+  const html = document.documentElement;
+  const next = html.dataset.theme === 'dark' ? 'light' : 'dark';
+  html.dataset.theme = next;
+  localStorage.setItem('cy-theme', next);
+  updateThemeBtn();
+}
+
+function updateThemeBtn() {
+  const btn = $('theme-btn');
+  if (!btn) return;
+  const dark = document.documentElement.dataset.theme === 'dark';
+  btn.title = dark ? '切换到亮色' : '切换到暗色';
+  btn.innerHTML = dark
+    // Sun icon — click to go light
+    ? `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>`
+    // Moon icon — click to go dark
+    : `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>`;
+}
 
 function updateCharBtn() {
   const n = S.characters.length;
