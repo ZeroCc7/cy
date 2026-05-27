@@ -261,11 +261,47 @@ def _clean_json_obj(raw: str) -> dict:
     return json.loads(m.group(0) if m else raw)
 
 def _extract_json_array(raw: str) -> list:
-    """Strip markdown fences and extract the outermost JSON array."""
+    """Strip markdown fences, extract outermost JSON array, repair if truncated."""
     raw = re.sub(r'^```(?:json)?\s*', '', raw.strip(), flags=re.MULTILINE)
     raw = re.sub(r'```\s*$', '', raw.strip(), flags=re.MULTILINE).strip()
-    m = re.search(r'\[[\s\S]*\]', raw)
-    return json.loads(m.group(0) if m else raw)
+    # Grab from first [ onwards (drop any leading prose)
+    start = raw.find('[')
+    if start != -1:
+        raw = raw[start:]
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        # Response was likely truncated; recover all fully-closed objects
+        # Find the last }, or } before the truncation point
+        last_obj_end = -1
+        depth = 0
+        in_str = False
+        escape = False
+        for i, ch in enumerate(raw):
+            if escape:
+                escape = False
+                continue
+            if ch == '\\' and in_str:
+                escape = True
+                continue
+            if ch == '"':
+                in_str = not in_str
+                continue
+            if in_str:
+                continue
+            if ch == '{':
+                depth += 1
+            elif ch == '}':
+                depth -= 1
+                if depth == 0:
+                    last_obj_end = i
+        if last_obj_end != -1:
+            repaired = raw[:last_obj_end + 1] + ']'
+            try:
+                return json.loads(repaired)
+            except json.JSONDecodeError:
+                pass
+        return []
 
 
 @app.post("/api/project/{pid}/extract-characters")
@@ -274,7 +310,7 @@ async def extract_characters(pid: str, req: Request):
     worldbuilding = body.get("worldbuilding", "")
     prompt = CHARACTER_EXTRACT_PROMPT.format(worldbuilding=worldbuilding)
     resp = client.chat.completions.create(
-        model=MODEL, max_tokens=1500, stream=False,
+        model=MODEL, max_tokens=4096, stream=False,
         messages=[
             {"role": "system", "content": CHARACTER_EXTRACT_SYSTEM},
             {"role": "user",   "content": prompt},
@@ -282,6 +318,8 @@ async def extract_characters(pid: str, req: Request):
     )
     raw = resp.choices[0].message.content.strip()
     characters = _extract_json_array(raw)
+    if not characters:
+        raise HTTPException(status_code=500, detail="角色提取返回空列表，请重试")
     return JSONResponse(characters)
 
 
