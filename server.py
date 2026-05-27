@@ -364,14 +364,16 @@ async def reextract_character(pid: str, req: Request):
 
 @app.post("/api/project/{pid}/characters/{cid}/upload-image")
 async def upload_character_image(pid: str, cid: str, file: UploadFile = File(...)):
+    import time as _time
+    img_id = str(int(_time.time() * 1000))
     data = await file.read()
-    path = f"{pid}/{cid}.webp"
+    path = f"{pid}/{cid}_{img_id}.webp"
     db.storage.from_("character-images").upload(
         path, data,
-        file_options={"content-type": "image/webp", "upsert": "true"},
+        file_options={"content-type": "image/webp", "upsert": "false"},
     )
     url = db.storage.from_("character-images").get_public_url(path)
-    return {"url": url}
+    return {"url": url, "imgId": img_id}
 
 
 @app.post("/api/project/{pid}/characters/{cid}/generate-image")
@@ -420,13 +422,25 @@ async def generate_character_image(pid: str, cid: str, req: Request):
         async with httpx.AsyncClient(timeout=60) as hc:
             img_data = (await hc.get(image_url)).content
 
-    path = f"{pid}/{cid}.webp"
+    import time as _time
+    img_id = str(int(_time.time() * 1000))
+    path = f"{pid}/{cid}_{img_id}.webp"
     db.storage.from_("character-images").upload(
         path, img_data,
-        file_options={"content-type": "image/webp", "upsert": "true"},
+        file_options={"content-type": "image/webp", "upsert": "false"},
     )
     public_url = db.storage.from_("character-images").get_public_url(path)
-    return {"url": public_url}
+    return {"url": public_url, "imgId": img_id}
+
+
+@app.delete("/api/project/{pid}/characters/{cid}/images/{img_id}")
+async def delete_character_image(pid: str, cid: str, img_id: str):
+    path = f"{pid}/{cid}_{img_id}.webp"
+    try:
+        db.storage.from_("character-images").remove([path])
+    except Exception:
+        pass  # best-effort; storage orphans are acceptable
+    return {"ok": True}
 
 
 # ── Export ────────────────────────────────────────────────────────────────────
