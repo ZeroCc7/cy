@@ -18,7 +18,8 @@ from supabase import create_client, Client
 from exporter import save_full_script, extract_episode_outlines
 from prompts import (OUTLINE_SYSTEM, OUTLINE_PROMPT, EPISODE_SYSTEM, EPISODE_PROMPT,
                      REFINE_PROMPT, WORLDBUILDING_SYSTEM, WORLDBUILDING_PROMPT,
-                     CHARACTER_EXTRACT_SYSTEM, CHARACTER_EXTRACT_PROMPT)
+                     CHARACTER_EXTRACT_SYSTEM, CHARACTER_EXTRACT_PROMPT,
+                     EPISODE_PLAN_SYSTEM, EPISODE_PLAN_PROMPT, SINGLE_EPISODE_PLAN_PROMPT)
 
 load_dotenv()
 
@@ -113,13 +114,22 @@ async def outline(req: Request):
 
 @app.post("/api/episode")
 async def episode(req: Request):
-    body     = await req.json()
-    ol_text  = body.get("outline", "")
-    ep_num   = body.get("episode_num", 1)
-    ep_list  = extract_episode_outlines(ol_text)
-    ep_ol    = ep_list[ep_num - 1] if ep_num <= len(ep_list) else f"第{ep_num}集"
-    wpm      = 200
-    prompt   = EPISODE_PROMPT.format(
+    body      = await req.json()
+    ol_text   = body.get("outline", "")
+    ep_num    = body.get("episode_num", 1)
+    ep_plan   = body.get("episode_plan")  # optional structured plan dict
+    ep_list   = extract_episode_outlines(ol_text)
+    ep_ol     = ep_list[ep_num - 1] if ep_num <= len(ep_list) else f"第{ep_num}集"
+    if ep_plan:
+        ep_ol += (
+            f"\n\n【第{ep_num}集结构规划】\n"
+            f"标题：{ep_plan.get('title','')}\n"
+            f"本集目标：{ep_plan.get('goal','')}\n"
+            f"主要冲突：{ep_plan.get('conflict','')}\n"
+            f"结尾钩子：{ep_plan.get('hook','')}"
+        )
+    wpm    = 200
+    prompt = EPISODE_PROMPT.format(
         episode_num=ep_num, outline=ol_text, episode_outline=ep_ol,
         duration_min=1, duration_max=3, word_count_min=wpm, word_count_max=3 * wpm,
     )
@@ -150,9 +160,10 @@ def _row_to_proj(row: dict) -> dict:
         "episodesDone": row.get("episodes_done", 0),
         "messages":     row.get("messages") or [],
         "episodes":     row.get("episodes") or {},
-        "characters":   row.get("characters") or [],
-        "created":      row.get("created", ""),
-        "updated":      row.get("updated", ""),
+        "characters":    row.get("characters") or [],
+        "episodePlans":  row.get("episode_plans") or {},
+        "created":       row.get("created", ""),
+        "updated":       row.get("updated", ""),
     }
 
 
@@ -179,6 +190,7 @@ def _save_proj(data: dict) -> str:
         "messages":      data.get("messages", []),
         "episodes":      data.get("episodes", {}),
         "characters":    data.get("characters", []),
+        "episode_plans": data.get("episodePlans", {}),
         "created":       data.get("created") or now,
         "updated":       now,
     }).execute()
@@ -239,6 +251,10 @@ async def project_patch(pid: str, req: Request):
     elif field == "characters":
         db.table("projects").update({
             "characters": body["characters"], "updated": now,
+        }).eq("id", pid).execute()
+    elif field == "episode_plans":
+        db.table("projects").update({
+            "episode_plans": body["episodePlans"], "updated": now,
         }).eq("id", pid).execute()
     else:
         raise HTTPException(400, f"未知 field: {field}")
@@ -441,6 +457,43 @@ async def delete_character_image(pid: str, cid: str, img_id: str):
     except Exception:
         pass  # best-effort; storage orphans are acceptable
     return {"ok": True}
+
+
+# ── Episode Plans ────────────────────────────────────────────────────────────
+
+@app.post("/api/project/{pid}/generate-episode-plans")
+async def generate_episode_plans(pid: str, req: Request):
+    body = await req.json()
+    outline = body.get("outline", "")
+    episode_count = body.get("episode_count", 15)
+    prompt = EPISODE_PLAN_PROMPT.format(outline=outline, episode_count=episode_count)
+    resp = client.chat.completions.create(
+        model=MODEL, max_tokens=4096, stream=False,
+        messages=[
+            {"role": "system", "content": EPISODE_PLAN_SYSTEM},
+            {"role": "user",   "content": prompt},
+        ],
+    )
+    raw = resp.choices[0].message.content.strip()
+    plans = _clean_json_obj(raw)
+    return JSONResponse(plans)
+
+
+@app.post("/api/project/{pid}/generate-episode-plan/{ep_num}")
+async def generate_single_episode_plan(pid: str, ep_num: int, req: Request):
+    body = await req.json()
+    outline = body.get("outline", "")
+    prompt = SINGLE_EPISODE_PLAN_PROMPT.format(ep_num=ep_num, outline=outline)
+    resp = client.chat.completions.create(
+        model=MODEL, max_tokens=512, stream=False,
+        messages=[
+            {"role": "system", "content": EPISODE_PLAN_SYSTEM},
+            {"role": "user",   "content": prompt},
+        ],
+    )
+    raw = resp.choices[0].message.content.strip()
+    plan = _clean_json_obj(raw)
+    return JSONResponse(plan)
 
 
 # ── Export ────────────────────────────────────────────────────────────────────

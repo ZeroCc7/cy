@@ -198,8 +198,87 @@ header h1::before{
 }
 .hdr-char-btn:not(.has-chars) .char-count-badge{display:none}
 
+/* ── Workspace & Step Sidebar ───────────────────────────────────── */
+.workspace{display:flex;flex:1;overflow:hidden}
+
+.step-sidebar{
+  width:168px;flex-shrink:0;
+  background:var(--surf-1);border-right:1px solid var(--line-2);
+  display:flex;flex-direction:column;overflow:hidden
+}
+.ss-hdr{
+  padding:12px 14px 9px;border-bottom:1px solid var(--line-2);flex-shrink:0;
+  display:flex;align-items:center;justify-content:space-between
+}
+.ss-studio{
+  font-size:8.5px;font-weight:700;color:var(--txt-4);
+  letter-spacing:.18em;text-transform:uppercase
+}
+.ss-project{
+  padding:12px 14px 10px;border-bottom:1px solid var(--line-1);flex-shrink:0
+}
+.ss-project-name{
+  font-size:15px;font-weight:700;color:var(--txt-1);
+  word-break:break-all;line-height:1.35
+}
+.ss-nav{
+  flex:1;overflow-y:auto;padding:7px 8px;
+  display:flex;flex-direction:column;gap:1px
+}
+.ss-nav::-webkit-scrollbar{width:2px}
+.ss-nav::-webkit-scrollbar-thumb{background:var(--line-3);border-radius:2px}
+.ss-step{
+  display:flex;align-items:center;gap:8px;
+  padding:9px 9px;border-radius:var(--r-sm);
+  border:1px solid transparent;border-left:2px solid transparent;
+  cursor:default;transition:all .18s;position:relative
+}
+.ss-step.done{cursor:pointer}
+.ss-step.done:hover{background:var(--surf-2);border-color:var(--line-2);border-left-color:transparent}
+.ss-step.active{
+  background:var(--surf-3);
+  border-color:var(--gold-dim);border-left-color:var(--gold);
+  cursor:default
+}
+.ss-num{
+  font-size:10.5px;font-weight:700;color:var(--txt-4);
+  letter-spacing:.03em;flex-shrink:0;width:18px
+}
+.ss-step.active .ss-num{color:var(--gold)}
+.ss-step.done .ss-num{color:var(--safe)}
+.ss-info{flex:1;min-width:0}
+.ss-name{font-size:12px;font-weight:600;color:var(--txt-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ss-sub{font-size:10px;color:var(--txt-4);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ss-step.active .ss-name{color:var(--txt-1)}
+.ss-step.active .ss-sub{color:var(--txt-3)}
+.ss-step.done .ss-name{color:color-mix(in srgb,var(--safe) 70%,var(--txt-2))}
+.ss-check{font-size:9px;color:var(--safe);font-weight:700;flex-shrink:0;opacity:0;transition:opacity .18s}
+.ss-step.done .ss-check{opacity:1}
+.ss-progress-section{
+  flex-shrink:0;padding:11px 14px 14px;border-top:1px solid var(--line-1)
+}
+.ss-progress-label{
+  font-size:9.5px;color:var(--txt-4);letter-spacing:.06em;
+  text-transform:uppercase;margin-bottom:6px
+}
+.ss-progress-bar{
+  height:3px;background:var(--surf-3);border-radius:2px;overflow:hidden;margin-bottom:5px
+}
+.ss-progress-fill{
+  height:100%;background:var(--gold);border-radius:2px;transition:width .6s ease
+}
+.ss-progress-pct{font-size:11px;color:var(--gold);font-weight:600}
+
 /* ── Layout ─────────────────────────────────────────────────────── */
 .layout{display:flex;flex:1;overflow:hidden}
+
+/* ── Content-only mode (steps 02–05): chat collapses to bottom strip */
+.layout.content-only{flex-direction:column}
+.layout.content-only .chat-panel{
+  width:auto;flex-shrink:0;border-right:none;border-top:1px solid var(--line-1)
+}
+.layout.content-only .messages{display:none}
+.layout.content-only .content-panel{flex:1;overflow:hidden}
 
 /* ── Chat-focus: full-screen conversation mode ───────────────────── */
 .layout.chat-focus{justify-content:center;background:var(--bg)}
@@ -343,11 +422,15 @@ textarea:disabled{opacity:.35}
 /* ── Content Panel ──────────────────────────────────────────────── */
 .content-panel{flex:1;display:flex;flex-direction:column;overflow:hidden;position:relative}
 .content-toolbar{
+  display:flex;flex-direction:column;
+  border-bottom:1px solid var(--line-1);background:var(--surf-1);flex-shrink:0
+}
+.ct-top{
   display:flex;align-items:center;gap:7px;padding:8px 22px;
-  border-bottom:1px solid var(--line-1);background:var(--surf-1);
-  flex-shrink:0;min-height:46px;flex-wrap:wrap
+  min-height:46px;flex-wrap:wrap
 }
 .ctitle{font-size:12px;color:var(--txt-3);margin-right:auto;letter-spacing:.03em}
+.content-toolbar .chips-row:not(:empty){padding:0 22px 9px}
 .cbody{flex:1;overflow-y:auto;padding:28px 32px}
 .cbody::-webkit-scrollbar{width:2px}
 .cbody::-webkit-scrollbar-thumb{background:var(--line-3);border-radius:2px}
@@ -865,6 +948,189 @@ textarea:disabled{opacity:.35}
 @media(prefers-reduced-motion:reduce){
   .content-panel.is-generating .content-toolbar{animation:none}
 }
+
+/* ── Episode Planning ──────────────────────────────────────────── */
+/* :has() auto-zeros padding when the two-column layout is present */
+.cbody:has(.ep-plan-layout){padding:0;overflow:hidden}
+.ep-plan-layout{display:flex;height:100%}
+
+.ep-plan-list{
+  width:214px;flex-shrink:0;border-right:1px solid var(--line-2);
+  overflow-y:auto;padding:10px 7px;display:flex;flex-direction:column;gap:2px
+}
+.ep-plan-list::-webkit-scrollbar{width:2px}
+.ep-plan-list::-webkit-scrollbar-thumb{background:var(--line-3);border-radius:2px}
+
+.ep-plan-item{
+  padding:9px 11px;border-radius:var(--r-sm);cursor:pointer;
+  border:1px solid transparent;transition:all .15s
+}
+.ep-plan-item:hover{background:var(--surf-2);border-color:var(--line-3)}
+.ep-plan-item.active{background:var(--surf-3);border-color:var(--gold-dim)}
+.ep-plan-num{font-size:10px;color:var(--txt-3);margin-bottom:3px;letter-spacing:.03em}
+.ep-plan-title{
+  font-size:12.5px;color:var(--txt-3);line-height:1.38;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis
+}
+.ep-plan-item.has-plan .ep-plan-title{color:var(--txt-1)}
+.ep-plan-item.active .ep-plan-num{color:color-mix(in srgb,var(--gold) 60%,transparent)}
+.ep-plan-item.active .ep-plan-title{color:var(--gold)}
+
+.ep-plan-detail{flex:1;overflow-y:auto;padding:24px 28px}
+.ep-plan-detail::-webkit-scrollbar{width:2px}
+.ep-plan-detail::-webkit-scrollbar-thumb{background:var(--line-3);border-radius:2px}
+.ep-plan-detail-empty{
+  display:flex;align-items:center;justify-content:center;
+  height:100%;color:var(--txt-4);font-size:13px
+}
+.ep-plan-detail-hdr{
+  display:flex;align-items:center;margin-bottom:20px;gap:10px
+}
+.ep-plan-detail-hdr h3{
+  font-size:16px;color:var(--gold);font-weight:600;letter-spacing:.04em;flex:1
+}
+.ep-plan-regen-btn{
+  background:none;border:1px solid var(--line-3);color:var(--txt-3);
+  font-size:11.5px;padding:4px 12px;border-radius:var(--r-xs);
+  cursor:pointer;transition:all .15s;font-family:inherit
+}
+.ep-plan-regen-btn:hover{background:var(--surf-3);color:var(--gold);border-color:var(--gold-dim)}
+.ep-plan-regen-btn:disabled{opacity:.35;cursor:not-allowed}
+
+.ep-plan-field{margin-bottom:14px}
+.ep-plan-field label{
+  font-size:10.5px;font-weight:700;color:var(--txt-3);display:block;
+  margin-bottom:5px;letter-spacing:.09em;text-transform:uppercase
+}
+.ep-plan-field input,.ep-plan-field textarea{
+  width:100%;background:var(--surf-2);border:1px solid var(--line-3);
+  border-radius:var(--r-sm);color:var(--txt-1);font-size:13px;
+  font-family:inherit;padding:7px 11px;outline:none;transition:border-color .2s
+}
+.ep-plan-field input:focus,.ep-plan-field textarea:focus{border-color:var(--gold-dim)}
+.ep-plan-field textarea{resize:vertical;min-height:56px;line-height:1.55}
+
+.ep-plan-save-row{margin-top:8px}
+.ep-plan-save-btn{
+  background:var(--gold);color:#0e0a02;border:none;
+  font-size:12.5px;font-weight:700;padding:6px 18px;
+  border-radius:var(--r-sm);cursor:pointer;transition:all .15s;font-family:inherit
+}
+.ep-plan-save-btn:hover{background:var(--gold-lt)}
+
+/* Planning phase badge */
+.phase-badge.planning{color:#c87032;border-color:#c8703230;background:#c870320a}
+
+/* ── Episode Scripts Layout (三栏) ──────────────────────────────── */
+.cbody:has(.ep-script-layout){padding:0;overflow:hidden}
+.ep-script-layout{display:flex;height:100%}
+
+/* 左栏：集数导航 */
+.ep-script-list{
+  width:190px;flex-shrink:0;border-right:1px solid var(--line-2);
+  overflow-y:auto;padding:10px 7px;display:flex;flex-direction:column;gap:2px
+}
+.ep-script-list::-webkit-scrollbar{width:2px}
+.ep-script-list::-webkit-scrollbar-thumb{background:var(--line-3);border-radius:2px}
+.ep-script-item{
+  position:relative;padding:9px 11px;border-radius:var(--r-sm);cursor:pointer;
+  border:1px solid transparent;transition:all .15s
+}
+.ep-script-item:hover{background:var(--surf-2);border-color:var(--line-3)}
+.ep-script-item.active{background:var(--surf-3);border-color:var(--gold-dim)}
+.ep-script-num{font-size:10px;color:var(--txt-3);margin-bottom:3px;letter-spacing:.03em}
+.ep-script-item-title{
+  font-size:12.5px;color:var(--txt-3);line-height:1.38;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-right:18px
+}
+.ep-script-item.has-script .ep-script-item-title{color:var(--txt-1)}
+.ep-script-item.active .ep-script-num{color:color-mix(in srgb,var(--gold) 60%,transparent)}
+.ep-script-item.active .ep-script-item-title{color:var(--gold)}
+.ep-done-mark{
+  position:absolute;right:9px;top:50%;transform:translateY(-50%);
+  font-size:10px;color:var(--safe);font-weight:700
+}
+
+/* 中栏：本集大纲参考 + 生成按钮 */
+.ep-mid-panel{
+  width:254px;flex-shrink:0;border-right:1px solid var(--line-2);
+  display:flex;flex-direction:column;overflow:hidden
+}
+.ep-mid-hdr{
+  flex-shrink:0;padding:12px 16px 10px;border-bottom:1px solid var(--line-2);
+  display:flex;align-items:center;justify-content:space-between;gap:8px
+}
+.ep-mid-hdr-title{
+  font-size:11px;font-weight:700;color:var(--txt-3);
+  letter-spacing:.07em;text-transform:uppercase
+}
+.ep-mid-ep-num{font-size:11px;color:var(--txt-4)}
+.ep-mid-body{flex:1;overflow-y:auto;padding:14px 14px 0}
+.ep-mid-body::-webkit-scrollbar{width:2px}
+.ep-mid-body::-webkit-scrollbar-thumb{background:var(--line-3);border-radius:2px}
+.ep-mid-field{margin-bottom:11px}
+.ep-mid-label{
+  font-size:10px;font-weight:700;color:var(--txt-3);
+  letter-spacing:.09em;text-transform:uppercase;margin-bottom:4px
+}
+.ep-mid-val{
+  font-size:12.5px;color:var(--txt-1);line-height:1.52;
+  background:var(--surf-2);border:1px solid var(--line-2);
+  border-radius:var(--r-sm);padding:7px 10px
+}
+.ep-mid-empty{
+  font-size:12px;color:var(--txt-4);text-align:center;
+  padding:28px 0;line-height:1.6
+}
+.ep-mid-footer{
+  flex-shrink:0;padding:14px;border-top:1px solid var(--line-2);
+  display:flex;flex-direction:column;gap:8px
+}
+.ep-gen-hint{font-size:11px;color:var(--txt-3);line-height:1.55;text-align:center}
+.ep-gen-primary-btn{
+  width:100%;background:var(--gold);color:#0e0a02;border:none;
+  font-size:13px;font-weight:700;padding:9px 16px;
+  border-radius:var(--r-sm);cursor:pointer;transition:all .15s;font-family:inherit
+}
+.ep-gen-primary-btn:hover{background:var(--gold-lt)}
+.ep-gen-primary-btn:disabled{opacity:.4;cursor:not-allowed}
+[data-theme="light"] .ep-gen-primary-btn{color:#fef5e0}
+
+/* 右栏：剧本正文编辑区 */
+.ep-script-editor{flex:1;overflow:hidden;display:flex;flex-direction:column;min-width:0}
+.ep-editor-hdr{
+  flex-shrink:0;padding:11px 20px 9px;border-bottom:1px solid var(--line-2);
+  display:flex;align-items:center;gap:10px
+}
+.ep-editor-hdr-left{flex:1;display:flex;align-items:center;gap:10px;min-width:0}
+.ep-editor-badge{
+  font-size:10px;font-weight:700;color:var(--txt-3);
+  letter-spacing:.09em;text-transform:uppercase;flex-shrink:0
+}
+.ep-editor-ep-title{
+  font-size:14px;color:var(--gold);font-weight:600;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis
+}
+.ep-act-btn{
+  flex-shrink:0;background:none;border:1px solid var(--line-3);color:var(--txt-2);
+  font-size:11.5px;padding:4px 13px;border-radius:var(--r-xs);
+  cursor:pointer;transition:all .15s;font-family:inherit
+}
+.ep-act-btn:hover{background:var(--surf-3);color:var(--txt-1);border-color:var(--line-3)}
+.ep-act-btn:disabled{opacity:.35;cursor:not-allowed}
+.ep-script-scroll{flex:1;overflow-y:auto}
+.ep-script-scroll::-webkit-scrollbar{width:2px}
+.ep-script-scroll::-webkit-scrollbar-thumb{background:var(--line-3);border-radius:2px}
+.ep-script-body{padding:22px 26px}
+.ep-script-empty-area{
+  height:100%;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;
+  color:var(--txt-4);font-size:13px;gap:6px;padding:40px
+}
+.ep-script-detail-placeholder{
+  flex:1;display:flex;align-items:center;justify-content:center;
+  color:var(--txt-4);font-size:13px
+}
 </style>
 </head>
 <body>
@@ -874,16 +1140,6 @@ textarea:disabled{opacity:.35}
     首页
   </button>
   <h1>短视频剧本生成器</h1>
-
-  <div class="step-bar" id="step-bar">
-    <div class="step active" id="s1">需求</div>
-    <span class="step-arrow">›</span>
-    <div class="step" id="s2">世界观</div>
-    <span class="step-arrow">›</span>
-    <div class="step" id="s3">大纲</div>
-    <span class="step-arrow">›</span>
-    <div class="step" id="s4">剧本</div>
-  </div>
 
   <div class="hdr-actions">
     <!-- 创作视图专属按钮 -->
@@ -917,12 +1173,55 @@ textarea:disabled{opacity:.35}
 </header>
 
 <div id="home-view" style="display:none;flex-direction:column;flex:1;overflow:hidden;background:var(--bg)"></div>
+<div class="workspace" id="workspace" style="display:none">
+
+  <!-- ── Left Step Sidebar ── -->
+  <aside class="step-sidebar" id="step-sidebar">
+    <div class="ss-hdr">
+      <span class="ss-studio">Script Studio</span>
+    </div>
+    <div class="ss-project">
+      <div class="ss-project-name" id="ss-project-name">新建故事</div>
+    </div>
+    <nav class="ss-nav">
+      <div class="ss-step active" id="ss1">
+        <span class="ss-num">01</span>
+        <div class="ss-info"><div class="ss-name">故事定位</div><div class="ss-sub">聊需求</div></div>
+        <span class="ss-check">✓</span>
+      </div>
+      <div class="ss-step" id="ss2">
+        <span class="ss-num">02</span>
+        <div class="ss-info"><div class="ss-name">世界观</div><div class="ss-sub">背景设定</div></div>
+        <span class="ss-check">✓</span>
+      </div>
+      <div class="ss-step" id="ss3">
+        <span class="ss-num">03</span>
+        <div class="ss-info"><div class="ss-name">故事大纲</div><div class="ss-sub">分集结构</div></div>
+        <span class="ss-check">✓</span>
+      </div>
+      <div class="ss-step" id="ss4">
+        <span class="ss-num">04</span>
+        <div class="ss-info"><div class="ss-name">分集规划</div><div class="ss-sub">冲突与钩子</div></div>
+        <span class="ss-check">✓</span>
+      </div>
+      <div class="ss-step" id="ss5">
+        <span class="ss-num">05</span>
+        <div class="ss-info"><div class="ss-name">正文创作</div><div class="ss-sub">逐集生成</div></div>
+        <span class="ss-check">✓</span>
+      </div>
+    </nav>
+    <div class="ss-progress-section">
+      <div class="ss-progress-label">作品完成度</div>
+      <div class="ss-progress-bar"><div class="ss-progress-fill" id="ss-progress-fill" style="width:0%"></div></div>
+      <div class="ss-progress-pct" id="ss-progress-pct">0%</div>
+    </div>
+  </aside>
+
 <div class="layout">
   <!-- ── Chat ── -->
   <div class="chat-panel">
     <div class="messages" id="messages"></div>
     <div class="chat-footer">
-      <div class="chips-row" id="chips"></div>
       <div id="refine-hint" style="display:none"></div>
       <div class="input-row">
         <textarea id="input" rows="3" placeholder="描述你的故事想法…"></textarea>
@@ -982,8 +1281,11 @@ textarea:disabled{opacity:.35}
 
     <!-- 正常内容区 -->
     <div class="content-toolbar">
-      <span class="ctitle" id="ctitle">等待生成…</span>
-      <div id="toolbar" style="display:flex;gap:6px;flex-wrap:wrap"></div>
+      <div class="ct-top">
+        <span class="ctitle" id="ctitle">等待生成…</span>
+        <div id="toolbar" style="display:flex;gap:6px;flex-wrap:wrap"></div>
+      </div>
+      <div class="chips-row" id="chips"></div>
     </div>
     <div class="cbody" id="cbody">
       <div class="empty-state">
@@ -998,6 +1300,8 @@ textarea:disabled{opacity:.35}
     </div>
   </div>
 </div>
+
+</div><!-- /workspace -->
 
 <script>
 // ══════════════════════════════════════════════════════════════════
@@ -1039,7 +1343,7 @@ const anim = {
 const S = {
   phase:'chat', projectId:null,
   messages:[], requirements:'', worldbuilding:'', outline:'',
-  episodeCount:15, episodes:{}, generating:false,
+  episodeCount:15, episodes:{}, episodePlans:{}, generating:false,
   pendingAction:null,
   characters:[],
 };
@@ -1052,25 +1356,23 @@ function goto(hash) {
 
 function showHomeView() {
   closeCharPanel();
-  $('home-view').style.display         = 'flex';
-  document.querySelector('.layout').style.display = 'none';
-  $('step-bar').style.display          = 'none';
-  $('back-home-btn').style.display     = 'none';
-  $('history-btn').style.display       = '';
-  $('new-proj-btn').style.display      = '';
-  $('char-btn').style.display          = 'none';
-  $('hdr-div-creation').style.display  = 'none';
+  $('home-view').style.display     = 'flex';
+  $('workspace').style.display     = 'none';
+  $('back-home-btn').style.display = 'none';
+  $('history-btn').style.display   = '';
+  $('new-proj-btn').style.display  = '';
+  $('char-btn').style.display      = 'none';
+  $('hdr-div-creation').style.display = 'none';
 }
 
 function showCreationView() {
-  $('home-view').style.display         = 'none';
-  document.querySelector('.layout').style.display = 'flex';
-  $('step-bar').style.display          = '';
-  $('back-home-btn').style.display     = '';
-  $('history-btn').style.display       = '';
-  $('new-proj-btn').style.display      = 'none';
-  $('char-btn').style.display          = '';
-  $('hdr-div-creation').style.display  = '';
+  $('home-view').style.display     = 'none';
+  $('workspace').style.display     = 'flex';
+  $('back-home-btn').style.display = '';
+  $('history-btn').style.display   = '';
+  $('new-proj-btn').style.display  = 'none';
+  $('char-btn').style.display      = '';
+  $('hdr-div-creation').style.display = '';
 }
 
 async function router() {
@@ -1097,7 +1399,7 @@ function initNewProject() {
   Object.assign(S, {
     phase:'chat', projectId:null, messages:[], requirements:'',
     worldbuilding:'', outline:'', episodeCount:15, episodes:{},
-    characters:[], generating:false, pendingAction:null,
+    episodePlans:{}, characters:[], generating:false, pendingAction:null,
   });
   $('messages').innerHTML = '';
   $('cbody').innerHTML = `
@@ -1115,6 +1417,7 @@ function initNewProject() {
   closeHistory(); closeCharPanel();
   S.characters = [];
   updateCharBtn();
+  updateSidebarProject('新建故事');
   setStep(1);
   document.querySelector('.layout').classList.add('chat-focus');
   appendMsg('assistant',
@@ -1379,13 +1682,16 @@ async function startWorldbuilding() {
   appendMsg('assistant','世界观设定完成！可以直接生成大纲，或告诉我需要修改的地方。');
 }
 function showWorldbuildingActions() {
-  const hasOutline = !!S.outline;
-  const hasEpisodes = S.outline && (S.phase==='episodes' || Object.keys(S.episodes).length>0);
+  const hasOutline  = !!S.outline;
+  const hasPlans    = hasOutline && Object.keys(S.episodePlans||{}).length > 0;
+  const hasEpisodes = hasOutline && (S.phase==='episodes' || Object.keys(S.episodes).length>0);
   const forwardChip = hasEpisodes
-    ? {label:'→ 返回剧本列表', cls:'primary', fn:backToEpisodes}
-    : hasOutline
-      ? {label:'→ 返回大纲',    cls:'primary', fn:backToOutline}
-      : {label:'继续生成大纲 →',cls:'primary', fn:startOutline};
+    ? {label:'→ 返回剧本列表',  cls:'primary', fn:backToEpisodes}
+    : hasPlans
+      ? {label:'→ 返回分集规划', cls:'primary', fn:backToPlanning}
+      : hasOutline
+        ? {label:'→ 返回大纲',   cls:'primary', fn:backToOutline}
+        : {label:'继续生成大纲 →', cls:'primary', fn:startOutline};
   setChips([
     forwardChip,
     {label:'修改世界观',fn:()=>enterRefineMode({type:'worldbuilding'},'📝 修改世界观')},
@@ -1413,6 +1719,192 @@ function backToOutline() {
   showOutlineActions();
 }
 
+// ── Phase 3→4 分集规划 ──
+function startEpisodePlanning() {
+  setChips([]); setStep(4);
+  $('ctitle').textContent=`分集规划 · 共 ${S.episodeCount} 集`;
+  renderPlanningView();
+  showPlanningActions();
+  if(Object.keys(S.episodePlans||{}).length===0)
+    appendMsg('assistant','大纲已就绪！现在来规划每集的结构——点击「生成分集规划」，AI 将自动拆解每集的目标、冲突和结尾钩子。');
+}
+
+function backToPlanning() {
+  setStep(4);
+  $('ctitle').textContent=`分集规划 · 共 ${S.episodeCount} 集`;
+  renderPlanningView();
+  showPlanningActions();
+}
+
+function showPlanningActions() {
+  const hasPlans   = Object.keys(S.episodePlans||{}).length > 0;
+  const hasEpisodes = Object.keys(S.episodes).length > 0;
+  const chips = [];
+  if(hasEpisodes) {
+    chips.push({label:'→ 返回剧本列表', cls:'primary', fn:backToEpisodes});
+  } else if(hasPlans) {
+    chips.push({label:'进入正文创作 →', cls:'primary', fn:startEpisodes});
+    chips.push({label:'↺ 重新生成规划', fn:generateAllPlans});
+  } else {
+    chips.push({label:'✦ 生成分集规划', cls:'primary', fn:generateAllPlans});
+  }
+  chips.push({label:'← 返回大纲', fn:backToOutline});
+  setChips(chips);
+  setToolbar([
+    ...(hasPlans?[{label:'↺ 重新生成全部规划',fn:generateAllPlans}]:[]),
+    {label:'← 返回大纲',fn:backToOutline},
+    {label:'← 修改世界观',fn:backToWorldbuilding},
+  ]);
+}
+
+function renderPlanningView() {
+  const cbody=$('cbody');
+  cbody.innerHTML=`
+    <div class="ep-plan-layout">
+      <div class="ep-plan-list" id="ep-plan-list"></div>
+      <div class="ep-plan-detail" id="ep-plan-detail">
+        <div class="ep-plan-detail-empty">← 选择左侧分集查看规划详情</div>
+      </div>
+    </div>`;
+  renderPlanList();
+}
+
+function renderPlanList() {
+  const list=$('ep-plan-list');
+  if(!list) return;
+  list.innerHTML='';
+  for(let i=1;i<=S.episodeCount;i++) {
+    const plan=(S.episodePlans||{})[String(i)];
+    const item=document.createElement('div');
+    item.className='ep-plan-item'+(plan?' has-plan':'');
+    item.id=`epi-${i}`;
+    item.innerHTML=`<div class="ep-plan-num">第 ${i} 集</div>
+      <div class="ep-plan-title">${plan?plan.title:'待规划'}</div>`;
+    item.onclick=()=>selectEpPlan(i);
+    list.appendChild(item);
+  }
+  anim.cardsIn('.ep-plan-item',0.02);
+  if(S.episodeCount>0) selectEpPlan(1);
+}
+
+function selectEpPlan(num) {
+  document.querySelectorAll('.ep-plan-item').forEach(el=>el.classList.remove('active'));
+  $(`epi-${num}`)?.classList.add('active');
+  const plan=(S.episodePlans||{})[String(num)]||{};
+  const detail=$('ep-plan-detail');
+  if(!detail) return;
+  const esc=s=>(s||'').replace(/"/g,'&quot;').replace(/</g,'&lt;');
+  detail.innerHTML=`
+    <div class="ep-plan-detail-hdr">
+      <h3>第 ${num} 集规划</h3>
+      <button class="ep-plan-regen-btn" id="ep-regen-${num}" onclick="generateSinglePlan(${num})">↺ 重新生成</button>
+    </div>
+    <div class="ep-plan-field">
+      <label>标题</label>
+      <input type="text" id="epf-title-${num}" value="${esc(plan.title)}" placeholder="本集标题…" oninput="markPlanDirty(${num})">
+    </div>
+    <div class="ep-plan-field">
+      <label>本集目标</label>
+      <textarea id="epf-goal-${num}" rows="2" placeholder="本集推进了哪条主线/支线…" oninput="markPlanDirty(${num})">${esc(plan.goal)}</textarea>
+    </div>
+    <div class="ep-plan-field">
+      <label>主要冲突</label>
+      <textarea id="epf-conflict-${num}" rows="2" placeholder="本集核心矛盾或对决…" oninput="markPlanDirty(${num})">${esc(plan.conflict)}</textarea>
+    </div>
+    <div class="ep-plan-field">
+      <label>结尾钩子</label>
+      <textarea id="epf-hook-${num}" rows="2" placeholder="如何勾住观众看下一集…" oninput="markPlanDirty(${num})">${esc(plan.hook)}</textarea>
+    </div>
+    <div class="ep-plan-save-row">
+      <button class="ep-plan-save-btn" id="ep-save-${num}" onclick="saveEpPlan(${num})" style="display:none">保存修改</button>
+    </div>`;
+}
+
+function markPlanDirty(num) {
+  const btn=$(`ep-save-${num}`);
+  if(btn) btn.style.display='';
+}
+
+function saveEpPlan(num) {
+  const title   =$(`epf-title-${num}`)?.value.trim()||'';
+  const goal    =$(`epf-goal-${num}`)?.value.trim()||'';
+  const conflict=$(`epf-conflict-${num}`)?.value.trim()||'';
+  const hook    =$(`epf-hook-${num}`)?.value.trim()||'';
+  if(!S.episodePlans) S.episodePlans={};
+  S.episodePlans[String(num)]={title,goal,conflict,hook};
+  const item=$(`epi-${num}`);
+  if(item) {
+    item.classList.add('has-plan');
+    item.querySelector('.ep-plan-title').textContent=title||'已规划';
+  }
+  const btn=$(`ep-save-${num}`);
+  if(btn) btn.style.display='none';
+  saveEpisodePlans();
+  showPlanningActions();
+}
+
+async function generateAllPlans() {
+  if(!S.outline||S.generating) return;
+  if(Object.keys(S.episodePlans||{}).length>0) {
+    if(!confirm(`将覆盖现有 ${Object.keys(S.episodePlans).length} 集规划，确认重新生成？`)) return;
+  }
+  setLoading(true);
+  $('ctitle').textContent=`分集规划 · 生成中`;
+  anim.genStart();
+  const list=$('ep-plan-list');
+  if(list) list.querySelectorAll('.ep-plan-title').forEach(el=>el.textContent='生成中…');
+  try {
+    const resp=await fetch(`/api/project/${S.projectId}/generate-episode-plans`,{
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({outline:S.outline,episode_count:S.episodeCount}),
+    });
+    if(!resp.ok) throw new Error(`HTTP ${resp.status}: ${await resp.text()}`);
+    S.episodePlans=await resp.json();
+    renderPlanList();
+    $('ctitle').textContent=`分集规划 · 共 ${S.episodeCount} 集`;
+    saveEpisodePlans();
+    showPlanningActions();
+    appendMsg('assistant',`已生成 ${S.episodeCount} 集规划！可逐集调整内容，满意后进入正文创作。`);
+  } catch(e) {
+    appendMsg('system',`规划生成失败：${e.message}`);
+    $('ctitle').textContent=`分集规划 · 共 ${S.episodeCount} 集`;
+  } finally {
+    setLoading(false); anim.genEnd();
+  }
+}
+
+async function generateSinglePlan(num) {
+  if(!S.outline) return;
+  const btn=$(`ep-regen-${num}`);
+  if(btn) { btn.disabled=true; btn.textContent='生成中…'; }
+  try {
+    const resp=await fetch(`/api/project/${S.projectId}/generate-episode-plan/${num}`,{
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({outline:S.outline}),
+    });
+    if(!resp.ok) throw new Error(`HTTP ${resp.status}: ${await resp.text()}`);
+    const plan=await resp.json();
+    if(!S.episodePlans) S.episodePlans={};
+    S.episodePlans[String(num)]=plan;
+    selectEpPlan(num);
+    const item=$(`epi-${num}`);
+    if(item){item.classList.add('has-plan');item.querySelector('.ep-plan-title').textContent=plan.title||'已规划';}
+    saveEpisodePlans();
+    showPlanningActions();
+  } catch(e) { alert(`重新生成失败：${e.message}`); }
+  finally { if(btn){btn.disabled=false;btn.textContent='↺ 重新生成';} }
+}
+
+async function saveEpisodePlans() {
+  if(!S.projectId) return;
+  try {
+    await fetch(`/api/project/${S.projectId}`,{
+      method:'PATCH', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({field:'episode_plans',episodePlans:S.episodePlans}),
+    });
+  } catch { /* 静默失败 */ }
+}
+
 // ── Phase 2→3 大纲 ──
 async function startOutline() {
   setChips([]); setStep(3);
@@ -1435,10 +1927,13 @@ async function startOutline() {
   appendMsg('assistant','大纲已生成！满意就继续，或者告诉我需要调整的地方。');
 }
 function showOutlineActions() {
+  const hasPlans    = Object.keys(S.episodePlans||{}).length > 0;
   const hasEpisodes = S.phase==='episodes' || Object.keys(S.episodes).length>0;
   const forwardChip = hasEpisodes
-    ? {label:'→ 返回剧本列表', cls:'primary', fn:backToEpisodes}
-    : {label:'继续生成剧本 →', cls:'primary', fn:startEpisodes};
+    ? {label:'→ 返回剧本列表',  cls:'primary', fn:backToEpisodes}
+    : hasPlans
+      ? {label:'→ 返回分集规划', cls:'primary', fn:backToPlanning}
+      : {label:'继续分集规划 →', cls:'primary', fn:startEpisodePlanning};
   setChips([
     forwardChip,
     {label:'修改大纲',fn:()=>enterRefineMode({type:'outline'},'📝 修改大纲')},
@@ -1452,121 +1947,215 @@ function showOutlineActions() {
   ]);
 }
 
-// ── Phase 3→4 剧本 ──
+// ── Phase 4→5 剧本 ──
 function startEpisodes() {
-  setChips([]); setStep(4);
-  $('ctitle').textContent=`分集剧本 · 共 ${S.episodeCount} 集`;
-  renderEpisodeGrid();
+  setChips([]); setStep(5);
+  renderEpisodeListView();
   setToolbar([
     {label:'全部自动生成',fn:generateAll},
     {label:'导出剧本文件',fn:exportProject},
+    {label:'← 返回分集规划',fn:backToPlanning},
     {label:'← 修改大纲',fn:backToOutline},
-    {label:'← 修改世界观',fn:backToWorldbuilding},
   ]);
-  appendMsg('assistant',`大纲就绪！点右侧卡片逐集生成，或「全部自动生成」一键完成全部 ${S.episodeCount} 集。`);
+  const hasPlans = Object.keys(S.episodePlans||{}).length > 0;
+  appendMsg('assistant', hasPlans
+    ? `分集规划已就绪！从左侧选择分集逐集生成，AI 将参照规划创作，或点「全部自动生成」。`
+    : `从左侧选择分集逐集生成，或点「全部自动生成」一键完成全部 ${S.episodeCount} 集。`);
 }
 
-function renderEpisodeGrid() {
-  const g=document.createElement('div'); g.className='ep-grid'; g.id='ep-grid';
-  for(let i=1;i<=S.episodeCount;i++) g.appendChild(makeEpCard(i));
-  $('cbody').innerHTML=''; $('cbody').appendChild(g);
-  anim.cardsIn('.ep-card', 0.035);
+
+function renderEpisodeListView() {
+  $('ctitle').textContent=`分集剧本 · 共 ${S.episodeCount} 集`;
+  $('cbody').innerHTML=`
+    <div class="ep-script-layout">
+      <div class="ep-script-list" id="ep-script-list"></div>
+      <div class="ep-mid-panel" id="ep-mid-panel">
+        <div class="ep-mid-hdr">
+          <span class="ep-mid-hdr-title">本集大纲参考</span>
+          <span class="ep-mid-ep-num"></span>
+        </div>
+        <div class="ep-mid-body"><div class="ep-mid-empty">← 选择左侧分集</div></div>
+        <div class="ep-mid-footer" style="display:none"></div>
+      </div>
+      <div class="ep-script-editor" id="ep-script-editor">
+        <div class="ep-script-detail-placeholder">← 选择左侧分集开始创作</div>
+      </div>
+    </div>`;
+  renderEpList();
+}
+function renderEpisodeGrid() { renderEpisodeListView(); }
+
+function renderEpList() {
+  const list=$('ep-script-list');
+  if(!list) return;
+  list.innerHTML='';
+  let autoSelect=1;
+  for(let i=1;i<=S.episodeCount;i++){if(!S.episodes[i]){autoSelect=i;break;}}
+  for(let i=1;i<=S.episodeCount;i++){
+    const plan=(S.episodePlans||{})[String(i)];
+    const done=!!S.episodes[i];
+    const title=plan&&plan.title?plan.title:(done?'已生成':'待生成');
+    const item=document.createElement('div');
+    item.id=`ep-item-${i}`; item.className=`ep-script-item${done?' has-script':''}`;
+    item.onclick=()=>selectEpScript(i);
+    item.innerHTML=`<div class="ep-script-num">第 ${i} 集</div><div class="ep-script-item-title">${title}</div>${done?'<div class="ep-done-mark">✓</div>':''}`;
+    list.appendChild(item);
+  }
+  selectEpScript(autoSelect);
 }
 
-function makeEpCard(num) {
-  const card=document.createElement('div'); card.id=`ep-${num}`;
-  const done=!!S.episodes[num]; card.className=`ep-card ${done?'done':''}`;
-  card.innerHTML=`
-    <div class="ep-num">第 ${num} 集</div>
-    <div class="ep-card-title">${done?'已生成':'点击生成'}</div>
-    <div class="ep-status">${done?'✓ 完成':'待生成'}</div>
-    ${done?`<div class="ep-actions">
-      <button class="ep-action-btn" onclick="viewEpisode(${num});event.stopPropagation()">查看</button>
-      <button class="ep-action-btn" onclick="requestRefineEpisode(${num});event.stopPropagation()">修改</button>
-    </div>`:''}`;
-  if(!done) card.onclick=()=>generateEpisode(num);
-  return card;
+function refreshEpItem(num) {
+  const item=$(`ep-item-${num}`);
+  if(!item) return;
+  const plan=(S.episodePlans||{})[String(num)];
+  const done=!!S.episodes[num];
+  const title=plan&&plan.title?plan.title:(done?'已生成':'待生成');
+  const wasActive=item.classList.contains('active');
+  item.className=`ep-script-item${done?' has-script':''}${wasActive?' active':''}`;
+  item.innerHTML=`<div class="ep-script-num">第 ${num} 集</div><div class="ep-script-item-title">${title}</div>${done?'<div class="ep-done-mark">✓</div>':''}`;
+  item.onclick=()=>selectEpScript(num);
 }
-function refreshEpCard(num) { const o=$(`ep-${num}`); if(o) o.replaceWith(makeEpCard(num)); }
+function refreshEpCard(num) { refreshEpItem(num); }
+
+function selectEpScript(num) {
+  document.querySelectorAll('.ep-script-item').forEach(el=>el.classList.remove('active'));
+  const item=$(`ep-item-${num}`);
+  if(item) item.classList.add('active');
+
+  const plan=(S.episodePlans||{})[String(num)];
+  const done=!!S.episodes[num];
+  const planTitle=plan&&plan.title?plan.title:'';
+
+  // ── 中栏：大纲参考 + 生成按钮 ──
+  const mid=$('ep-mid-panel');
+  if(mid) {
+    const numEl=mid.querySelector('.ep-mid-ep-num');
+    if(numEl) numEl.textContent=`第 ${num} 集`;
+    const body=mid.querySelector('.ep-mid-body');
+    if(body) {
+      if(plan&&(plan.title||plan.goal||plan.conflict||plan.hook)) {
+        body.innerHTML=[
+          plan.title    ?`<div class="ep-mid-field"><div class="ep-mid-label">集标题</div><div class="ep-mid-val">${plan.title}</div></div>`:'',
+          plan.goal     ?`<div class="ep-mid-field"><div class="ep-mid-label">本集目标</div><div class="ep-mid-val">${plan.goal}</div></div>`:'',
+          plan.conflict ?`<div class="ep-mid-field"><div class="ep-mid-label">主要冲突</div><div class="ep-mid-val">${plan.conflict}</div></div>`:'',
+          plan.hook     ?`<div class="ep-mid-field"><div class="ep-mid-label">结尾钩子</div><div class="ep-mid-val">${plan.hook}</div></div>`:'',
+        ].join('');
+      } else {
+        body.innerHTML=`<div class="ep-mid-empty">暂无分集规划<br><small>可返回 STEP 04 补充</small></div>`;
+      }
+    }
+    const footer=mid.querySelector('.ep-mid-footer');
+    if(footer) {
+      footer.style.display='flex';
+      footer.innerHTML=`
+        <button class="ep-gen-primary-btn" id="ep-gen-btn-${num}" onclick="generateEpisode(${num})">${done?'重新生成正文':'生成本集正文'}</button>
+        <div class="ep-gen-hint">AI 将结合本集大纲与人物设定生成标准短剧本。</div>`;
+    }
+  }
+
+  // ── 右栏：剧本正文 ──
+  const editor=$('ep-script-editor');
+  if(!editor) return;
+  const epTitle=`第 ${num} 集${planTitle?' · '+planTitle:''}`;
+  const contentHtml=done
+    ?`<div class="ep-script-body"><div class="rendered" id="ep-script-render">${md(S.episodes[num])}</div></div>`
+    :`<div class="ep-script-empty-area"><div>点击左侧「生成本集正文」开始创作</div></div>`;
+  editor.innerHTML=`
+    <div class="ep-editor-hdr">
+      <div class="ep-editor-hdr-left">
+        <span class="ep-editor-badge">剧本正文</span>
+        <span class="ep-editor-ep-title">${epTitle}</span>
+      </div>
+      ${done?`<button class="ep-act-btn" onclick="requestRefineEpisode(${num})">AI 修改</button>`:''}
+    </div>
+    <div class="ep-script-scroll" id="ep-script-scroll">${contentHtml}</div>`;
+}
+function viewEpisode(num) { selectEpScript(num); }
 
 async function generateEpisode(num) {
   if(S.generating) return;
-  const card=$(`ep-${num}`);
-  if(card){card.className='ep-card generating';card.querySelector('.ep-card-title').textContent='生成中…';}
-  showEpContent(num,'',true); anim.genStart(); setLoading(true);
-  const r=$('main-render'); let raw='';
+  const item=$(`ep-item-${num}`);
+  if(item) item.classList.add('generating');
+  if(!item?.classList.contains('active')) selectEpScript(num);
+  // Inject render target into right scroll
+  const scroll=$('ep-script-scroll');
+  if(scroll){
+    const bodyDiv=document.createElement('div'); bodyDiv.className='ep-script-body';
+    const render=document.createElement('div'); render.id='ep-script-render'; render.className='rendered';
+    bodyDiv.appendChild(render);
+    const old=scroll.querySelector('.ep-script-body,.ep-script-empty-area');
+    if(old) old.replaceWith(bodyDiv); else scroll.appendChild(bodyDiv);
+  }
+  const genBtn=$(`ep-gen-btn-${num}`);
+  if(genBtn){genBtn.disabled=true;genBtn.textContent='生成中…';}
+  anim.genStart(); setLoading(true);
+  let raw='';
+  const epPlan=(S.episodePlans||{})[String(num)]||null;
   try {
-    raw=await streamPost('/api/episode',{outline:S.outline,episode_num:num},c=>{
-      raw+=c; r.innerHTML=md(raw)+'<span class="typing-cursor"></span>';
-      $('cbody').scrollTop=$('cbody').scrollHeight;
+    raw=await streamPost('/api/episode',{outline:S.outline,episode_num:num,episode_plan:epPlan},c=>{
+      raw+=c;
+      const r=$('ep-script-render');
+      if(r) r.innerHTML=md(raw)+'<span class="typing-cursor"></span>';
+      const sc=$('ep-script-scroll'); if(sc) sc.scrollTop=sc.scrollHeight;
     });
   } catch {
-    if(card){card.className='ep-card';card.querySelector('.ep-card-title').textContent='失败，点击重试';}
+    if(item) item.classList.remove('generating');
+    if(genBtn){genBtn.disabled=false;genBtn.textContent='重试';}
     setLoading(false); anim.genEnd(); return;
   }
-  r.innerHTML=md(raw); S.episodes[num]=raw; anim.genEnd(); setLoading(false);
-  refreshEpCard(num); $('ctitle').textContent=`第 ${num} 集 · 完成`;
-  setToolbar([
-    {label:`修改第 ${num} 集`,fn:()=>requestRefineEpisode(num)},
-    {label:'← 返回列表',fn:backToGrid},
-    {label:'导出剧本文件',fn:exportProject},
-  ]);
+  const r=$('ep-script-render'); if(r) r.innerHTML=md(raw);
+  S.episodes[num]=raw; anim.genEnd(); setLoading(false);
+  if(item) item.classList.remove('generating');
+  refreshEpItem(num); selectEpScript(num);
   saveProject();
 }
 
 async function generateAll() {
-  for(let i=1;i<=S.episodeCount;i++) {
+  for(let i=1;i<=S.episodeCount;i++){
     if(S.episodes[i]) continue;
     await generateEpisode(i);
-    await new Promise(r=>setTimeout(r,200)); backToGrid();
+    await new Promise(r=>setTimeout(r,150));
   }
   appendMsg('assistant',`全部 ${S.episodeCount} 集生成完毕！`);
 }
 
 function showEpContent(num, content, streaming=false) {
-  $('ctitle').textContent=`第 ${num} 集${streaming?' · 生成中':''}`;
-  $('cbody').innerHTML='<div class="rendered" id="main-render"></div>';
-  if(content&&!streaming) $('main-render').innerHTML=md(content);
-  setToolbar([
-    {label:`修改第 ${num} 集`,fn:()=>requestRefineEpisode(num)},
-    {label:'← 返回列表',fn:backToGrid},
-    {label:'导出剧本文件',fn:exportProject},
-  ]);
+  if(!$('ep-script-editor')) selectEpScript(num);
+  const scroll=$('ep-script-scroll');
+  if(!scroll) return;
+  const bodyDiv=document.createElement('div'); bodyDiv.className='ep-script-body';
+  const render=document.createElement('div'); render.id='ep-script-render'; render.className='rendered';
+  if(content&&!streaming) render.innerHTML=md(content);
+  bodyDiv.appendChild(render);
+  const old=scroll.querySelector('.ep-script-body,.ep-script-empty-area');
+  if(old) old.replaceWith(bodyDiv); else scroll.appendChild(bodyDiv);
 }
-function viewEpisode(num) { showEpContent(num,S.episodes[num]||''); }
-function backToGrid() {
-  $('ctitle').textContent=`分集剧本 · 共 ${S.episodeCount} 集`;
-  renderEpisodeGrid();
-  setToolbar([
-    {label:'全部自动生成',fn:generateAll},
-    {label:'导出剧本文件',fn:exportProject},
-    {label:'← 修改大纲',fn:backToOutline},
-    {label:'← 修改世界观',fn:backToWorldbuilding},
-  ]);
-}
+function backToGrid() { renderEpisodeListView(); }
 
 function requestRefineEpisode(num) {
-  viewEpisode(num);
+  selectEpScript(num);
   enterRefineMode({type:'episode',num},`📝 修改第 ${num} 集`);
 }
 async function doRefineEpisode(num, feedback) {
   const orig=S.episodes[num]||'';
   showEpContent(num,'',true); setLoading(true);
-  const r=$('main-render'); let raw='';
+  let raw='';
   try {
     raw=await streamPost('/api/refine',{content:orig,feedback},c=>{
-      raw+=c; r.innerHTML=md(raw)+'<span class="typing-cursor"></span>';
-      $('cbody').scrollTop=$('cbody').scrollHeight;
+      raw+=c;
+      const r=$('ep-script-render');
+      if(r) r.innerHTML=md(raw)+'<span class="typing-cursor"></span>';
+      const sc=$('ep-script-scroll'); if(sc) sc.scrollTop=sc.scrollHeight;
     });
-  } catch { r.textContent='修改失败'; setLoading(false); return; }
-  r.innerHTML=md(raw); S.episodes[num]=raw;
-  $('ctitle').textContent=`第 ${num} 集 · 已修改`; setLoading(false);
-  refreshEpCard(num); saveProject();
-  setToolbar([
-    {label:`继续修改第 ${num} 集`,fn:()=>requestRefineEpisode(num)},
-    {label:'← 返回列表',fn:backToGrid},
-    {label:'导出剧本文件',fn:exportProject},
-  ]);
+  } catch {
+    const r=$('ep-script-render'); if(r) r.textContent='修改失败';
+    setLoading(false); return;
+  }
+  const r=$('ep-script-render'); if(r) r.innerHTML=md(raw);
+  S.episodes[num]=raw; setLoading(false);
+  refreshEpItem(num); selectEpScript(num);
+  $('ctitle').textContent=`分集剧本 · 共 ${S.episodeCount} 集`;
+  saveProject();
   appendMsg('assistant',`第 ${num} 集修改完成 ✓`);
 }
 
@@ -1595,29 +2184,44 @@ async function doRefineContent(target, feedback) {
 
 // ── Steps ──
 function setStep(n) {
-  S.phase=['chat','worldbuilding','outline','episodes'][n-1];
-  // clickable[i] = true 时该步骤显示为 done（绿色胶囊，可点击跳回）
-  const hasEp = S.outline && (n===4 || Object.keys(S.episodes).length > 0);
-  const clickable = [false, !!S.worldbuilding, !!S.outline, !!hasEp];
-  ['s1','s2','s3','s4'].forEach((id,i)=>{
-    const active = i+1 === n;
-    $(id).className = 'step' + (active ? ' active' : clickable[i] ? ' done' : '');
-    $(id).title = (!active && clickable[i]) ? '点击返回此步骤' : '';
+  S.phase = ['chat','worldbuilding','outline','planning','episodes'][n-1];
+  const clickable = [
+    false,
+    !!S.worldbuilding,
+    !!S.outline,
+    Object.keys(S.episodePlans||{}).length > 0,
+    Object.keys(S.episodes).length > 0,
+  ];
+  const backFns   = [null, backToWorldbuilding, backToOutline, backToPlanning, backToEpisodes];
+  ['ss1','ss2','ss3','ss4','ss5'].forEach((id,i)=>{
+    const el=$(id); if(!el) return;
+    const active = i+1===n, done = !active && clickable[i];
+    el.className = `ss-step${active?' active':''}${done?' done':''}`;
+    el.onclick   = done ? backFns[i] : null;
+    el.title     = done ? '点击返回此步骤' : '';
   });
-  $('s2').onclick = S.worldbuilding ? backToWorldbuilding : null;
-  $('s3').onclick = S.outline        ? backToOutline       : null;
-  $('s4').onclick = hasEp            ? backToEpisodes      : null;
+  // toggle content-only mode: content phases collapse chat to a bottom strip
+  const layout = document.querySelector('.layout');
+  if(layout) layout.classList.toggle('content-only', n > 1);
+  // update progress
+  const pcts=[0,20,40,63,85,100]; const pct=pcts[n-1]||0;
+  const fill=$('ss-progress-fill'), pctEl=$('ss-progress-pct');
+  if(fill) fill.style.width=pct+'%';
+  if(pctEl) pctEl.textContent=pct+'%';
+}
+
+function updateSidebarProject(title) {
+  const el=$('ss-project-name'); if(el) el.textContent=title||'新建故事';
 }
 
 function backToEpisodes() {
-  setStep(4);
-  $('ctitle').textContent=`分集剧本 · 共 ${S.episodeCount} 集`;
-  renderEpisodeGrid();
+  setStep(5);
+  renderEpisodeListView();
   setToolbar([
     {label:'全部自动生成',fn:generateAll},
     {label:'导出剧本文件',fn:exportProject},
+    {label:'← 返回分集规划',fn:backToPlanning},
     {label:'← 修改大纲',fn:backToOutline},
-    {label:'← 修改世界观',fn:backToWorldbuilding},
   ]);
 }
 
@@ -1634,8 +2238,10 @@ async function saveProject() {
         id:S.projectId, title, phase:S.phase, messages:S.messages,
         requirements:S.requirements, worldbuilding:S.worldbuilding,
         outline:S.outline, episodeCount:S.episodeCount, episodes:S.episodes,
+        episodePlans:S.episodePlans, characters:S.characters,
       })});
     const {id}=await resp.json(); S.projectId=id;
+  updateSidebarProject(title);
   } catch{ /* 静默失败 */ }
 }
 
@@ -1651,10 +2257,11 @@ async function exportProject() {
 // ── 恢复项目 ──
 function restoreProject(data) {
   S.projectId=data.id; S.phase=data.phase||'chat';
+  updateSidebarProject(data.title);
   S.messages=data.messages||[]; S.requirements=data.requirements||'';
   S.worldbuilding=data.worldbuilding||''; S.outline=data.outline||'';
   S.episodeCount=data.episodeCount||15; S.episodes=data.episodes||{};
-  S.characters=data.characters||[];
+  S.episodePlans=data.episodePlans||{}; S.characters=data.characters||[];
   updateCharBtn();
   const layout = document.querySelector('.layout');
   if (S.phase === 'chat') layout.classList.add('chat-focus');
@@ -1668,10 +2275,18 @@ function restoreProject(data) {
 
   const phase=data.phase;
   if(phase==='episodes') {
-    setStep(4); $('ctitle').textContent=`分集剧本 · 共 ${S.episodeCount} 集`;
-    renderEpisodeGrid();
-    setToolbar([{label:'全部自动生成',fn:generateAll},{label:'导出剧本文件',fn:exportProject}]);
+    setStep(5);
+    renderEpisodeListView();
+    setToolbar([
+      {label:'全部自动生成',fn:generateAll},{label:'导出剧本文件',fn:exportProject},
+      {label:'← 返回分集规划',fn:backToPlanning},
+    ]);
     setChips([]);
+    updateCharBtn();
+  } else if(phase==='planning') {
+    setStep(4); $('ctitle').textContent=`分集规划 · 共 ${S.episodeCount} 集`;
+    renderPlanningView();
+    showPlanningActions();
     updateCharBtn();
   } else if(phase==='outline') {
     setStep(3); $('ctitle').textContent=`故事大纲 · ${S.episodeCount} 集`;
@@ -1724,7 +2339,7 @@ async function loadProjectList() {
   }
 }
 
-const phaseLabel={chat:'① 聊需求',worldbuilding:'② 世界观',outline:'③ 大纲',episodes:'④ 剧本'};
+const phaseLabel={chat:'① 聊需求',worldbuilding:'② 世界观',outline:'③ 大纲',planning:'④ 分集规划',episodes:'⑤ 剧本'};
 
 function renderProjectList(list) {
   const el=$('h-list');
