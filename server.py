@@ -81,6 +81,14 @@ def sse_stream(system, messages, max_tokens=4000):
 async def index():
     return FileResponse("index.html")
 
+@app.get("/app.js")
+async def app_js():
+    return FileResponse("app.js", media_type="application/javascript")
+
+@app.get("/styles.css")
+async def styles_css():
+    return FileResponse("styles.css", media_type="text/css")
+
 
 # ── AI Streaming ──────────────────────────────────────────────────────────────
 
@@ -494,6 +502,105 @@ async def generate_single_episode_plan(pid: str, ep_num: int, req: Request):
     raw = resp.choices[0].message.content.strip()
     plan = _clean_json_obj(raw)
     return JSONResponse(plan)
+
+
+# ── New-frontend AI endpoints (no pid required) ──────────────────────────────
+
+_OUTLINE_PLANS_SYSTEM = (
+    "你是专业短剧策划编剧。根据故事定位，生成3个风格各异的完整故事大纲方案。"
+    "只输出JSON数组，不输出任何其他内容。"
+)
+
+_OUTLINE_PLANS_PROMPT = """根据以下故事定位，生成3个不同风格的故事大纲方案。
+
+故事定位：
+- 名称：{name}
+- 类型：{work_type}，共{episode_count}集
+- 受众：{audience}
+- 题材：{genres}
+- 核心元素：{core_elements}
+- 情感基调：{emotional_tone}
+
+要求：
+1. 3个方案需有明显风格差异（如爽感逆袭、权谋悬疑、情感虐恋）
+2. 每个方案包含：完整故事梗概 + 开篇设计 + 主线推进 + 高潮转折 + 结局方向
+3. 内容详实，每方案不少于300字
+
+输出格式（严格JSON数组，无其他内容）：
+[
+  {{"title": "方案一", "label": "偏爽感", "content": "完整大纲内容..."}},
+  {{"title": "方案二", "label": "偏权谋", "content": "完整大纲内容..."}},
+  {{"title": "方案三", "label": "偏情感", "content": "完整大纲内容..."}}
+]"""
+
+
+@app.post("/api/outline-plans")
+async def outline_plans_gen(req: Request):
+    body = await req.json()
+    pos  = body.get("storyPositioning", {})
+    episode_count = body.get("episodeCount", 10)
+    prompt = _OUTLINE_PLANS_PROMPT.format(
+        name          = pos.get("name", "未命名"),
+        work_type     = pos.get("workType", "短剧"),
+        episode_count = episode_count,
+        audience      = "、".join(pos.get("audience", [])) or "不限",
+        genres        = "、".join(pos.get("genres", [])) or "不限",
+        core_elements = "、".join(pos.get("coreElements", [])) or "不限",
+        emotional_tone= "、".join(pos.get("emotionalTone", [])) or "不限",
+    )
+    resp = client.chat.completions.create(
+        model=MODEL, max_tokens=4000, stream=False,
+        messages=[
+            {"role": "system", "content": _OUTLINE_PLANS_SYSTEM},
+            {"role": "user",   "content": prompt},
+        ],
+    )
+    raw   = resp.choices[0].message.content.strip()
+    plans = _extract_json_array(raw)
+    now   = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    for i, plan in enumerate(plans):
+        plan.setdefault("id",    f"plan-{i+1}")
+        plan.setdefault("title", f"方案{i+1}")
+        plan.setdefault("label", "AI生成")
+        plan["generatedAt"] = now
+    return JSONResponse({"plans": plans})
+
+
+@app.post("/api/generate-characters")
+async def generate_characters_standalone(req: Request):
+    body    = await req.json()
+    outline = body.get("outline", "")
+    prompt  = CHARACTER_EXTRACT_PROMPT.format(worldbuilding=outline)
+    resp = client.chat.completions.create(
+        model=MODEL, max_tokens=4096, stream=False,
+        messages=[
+            {"role": "system", "content": CHARACTER_EXTRACT_SYSTEM},
+            {"role": "user",   "content": prompt},
+        ],
+    )
+    raw        = resp.choices[0].message.content.strip()
+    characters = _extract_json_array(raw)
+    if not characters:
+        raise HTTPException(500, "角色提取失败，请重试")
+    return JSONResponse(characters)
+
+
+@app.post("/api/episode-plans")
+async def episode_plans_standalone(req: Request):
+    body          = await req.json()
+    outline       = body.get("outline", "")
+    episode_count = body.get("episodeCount", 10)
+    prompt = EPISODE_PLAN_PROMPT.format(outline=outline, episode_count=episode_count)
+    resp = client.chat.completions.create(
+        model=MODEL, max_tokens=4096, stream=False,
+        messages=[
+            {"role": "system", "content": EPISODE_PLAN_SYSTEM},
+            {"role": "user",   "content": prompt},
+        ],
+    )
+    raw   = resp.choices[0].message.content.strip()
+    plans = _clean_json_obj(raw)
+    return JSONResponse(plans)
 
 
 # ── Export ────────────────────────────────────────────────────────────────────
