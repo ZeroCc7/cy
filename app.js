@@ -1,11 +1,16 @@
-const STORAGE_KEY = "mq-script-studio-state-v1";
+const STORAGE_KEY = "mq-script-studio-state-v2";
+
+if (typeof marked !== "undefined") {
+  marked.setOptions({ breaks: true, gfm: true });
+}
 
 const steps = [
-  { id: 1, title: "故事定位", sub: "题材与标签", progress: 20 },
-  { id: 2, title: "故事大纲", sub: "多方案 / 编辑", progress: 40 },
-  { id: 3, title: "角色设定", sub: "人物小传", progress: 60 },
-  { id: 4, title: "分集规划", sub: "冲突与钩子", progress: 80 },
-  { id: 5, title: "正文创作", sub: "逐集生成", progress: 85 },
+  { id: 1, title: "作品需求", sub: "与 AI 对话确认", progress: 15 },
+  { id: 2, title: "故事大纲", sub: "多方案 / 精炼", progress: 30 },
+  { id: 3, title: "世界观",   sub: "AI 生成 / 编辑", progress: 45 },
+  { id: 4, title: "角色设定", sub: "人物小传",       progress: 62 },
+  { id: 5, title: "分集规划", sub: "冲突与钩子",     progress: 80 },
+  { id: 6, title: "正文创作", sub: "逐集生成",       progress: 90 },
 ];
 
 const tagOptions = {
@@ -23,13 +28,31 @@ let state = loadState();
 
 render();
 
+state._serverLoading = true;
+render();
+
 loadProjectsFromServer().then((serverScripts) => {
-  if (!serverScripts || !serverScripts.length) return;
-  state.scripts = serverScripts;
-  if (!state.scripts.find((s) => s.id === state.activeScriptId)) {
-    state.activeScriptId = state.scripts[0]?.id || "";
+  state._serverLoading = false;
+  if (serverScripts === null) {
+    state._serverError = true;
+  } else {
+    state._serverError = false;
+    state.scripts = serverScripts;
+    if (!state.scripts.find((s) => s.id === state.activeScriptId)) {
+      state.activeScriptId = state.scripts[0]?.id || "";
+    }
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({
+      listView: state.listView, search: state.search,
+      activeScriptId: state.activeScriptId, selectedEpisodeId: state.selectedEpisodeId,
+      outlineTab: state.outlineTab,
+      selectedOutlineIds: state.selectedOutlineIds, extraTags: state.extraTags,
+      scripts: state.scripts,
+    }));
   }
-  scheduleSave();
+  render();
+}).catch(() => {
+  state._serverLoading = false;
+  state._serverError = true;
   render();
 });
 
@@ -53,13 +76,13 @@ function loadState() {
     view: "list",
     listView: "grid",
     search: "",
-    activeScriptId: "script-demo",
+    activeScriptId: "",
     selectedEpisodeId: null,
     outlineTab: "plans",
-    assistantOpen: false,
+
     selectedOutlineIds: [],
     extraTags: { audience: [], genres: [], coreElements: [], emotionalTone: [] },
-    scripts: [makeDemoScript()],
+    scripts: [],
   }));
 }
 
@@ -69,7 +92,7 @@ function applyStartupRoute(next) {
     next.view = "workspace";
   }
   const step = Number(params.get("step"));
-  if (step >= 1 && step <= 5) {
+  if (step >= 1 && step <= 6) {
     const script = next.scripts.find((item) => item.id === next.activeScriptId) || next.scripts[0];
     if (script) script.currentStep = step;
   }
@@ -78,13 +101,13 @@ function applyStartupRoute(next) {
 
 function normalizeState(raw) {
   const next = {
-    view: raw.view || "list",
+    view: "list",
     listView: raw.listView || "grid",
     search: raw.search || "",
     activeScriptId: raw.activeScriptId || raw.scripts?.[0]?.id || "script-demo",
     selectedEpisodeId: raw.selectedEpisodeId || raw.scripts?.[0]?.episodes?.[0]?.id || "ep-1",
     outlineTab: raw.outlineTab || "plans",
-    assistantOpen: Boolean(raw.assistantOpen),
+
     selectedOutlineIds: raw.selectedOutlineIds || [],
     extraTags: raw.extraTags || { audience: [], genres: [], coreElements: [], emotionalTone: [] },
     scripts: Array.isArray(raw.scripts) && raw.scripts.length ? raw.scripts : [],
@@ -92,6 +115,7 @@ function normalizeState(raw) {
     toasts: [],
     generation: null,
     selection: null,
+    sidebarCollapsed: false,
   };
   if (!next.scripts.find((script) => script.id === next.activeScriptId)) {
     next.activeScriptId = next.scripts[0]?.id;
@@ -101,19 +125,20 @@ function normalizeState(raw) {
 
 function persist() {
   const payload = {
-    view: state.view,
     listView: state.listView,
     search: state.search,
     activeScriptId: state.activeScriptId,
     selectedEpisodeId: state.selectedEpisodeId,
     outlineTab: state.outlineTab,
-    assistantOpen: state.assistantOpen,
+
     selectedOutlineIds: state.selectedOutlineIds,
     extraTags: state.extraTags,
     scripts: state.scripts,
   };
   localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
   setSaveState("saved");
+  const active = activeScript();
+  if (active && active._serverLoaded) syncToServer(active);
 }
 
 function scheduleSave() {
@@ -277,6 +302,7 @@ function createBlankScript() {
   return {
     id,
     name: "未命名剧本",
+    _serverLoaded: true,
     status: "DRAFT",
     completionRate: 10,
     currentStep: 1,
@@ -293,7 +319,12 @@ function createBlankScript() {
     storyOutline: { selectedPlanIndex: 0, plans: [], versions: [] },
     characters: [],
     episodes: [],
-    aiConversation: [{ id: uid(), role: "ai", step: 1, content: "先给我一个题材方向，我可以帮你组合标签并生成大纲。", appliedToContent: false }],
+    _chatStarted: false,
+    _chatReady: false,
+    worldbuilding: "",
+    wbConversation: [],
+    outlineConversation: [],
+    aiConversation: [],
   };
 }
 
@@ -310,16 +341,6 @@ function renderTopNav() {
           <span class="brand-mark"></span>
           <span class="brand-title">幕启</span>
         </div>
-        <nav class="nav-links" aria-label="主导航">
-          <button class="nav-link" type="button">⌂ 首页</button>
-          <button class="module-pill" type="button">✎ 剧本创作⌄</button>
-          <button class="nav-link" type="button">▱ 视频创作</button>
-        </nav>
-        <div class="user-chip">
-          <span class="avatar"></span>
-          <span>9db322036316</span>
-          <span>⌄</span>
-        </div>
       </div>
     </header>
   `;
@@ -327,6 +348,11 @@ function renderTopNav() {
 
 function renderListPage() {
   const scripts = filteredScripts();
+  const bodyContent = state._serverLoading
+    ? `<div class="empty-state"><div><div class="spinner"></div><p>正在从服务器加载剧本…</p></div></div>`
+    : state._serverError
+      ? `<div class="empty-state"><div><h3>服务器连接失败</h3><p>无法加载剧本列表，请检查后端服务是否正常运行。</p><button class="primary-button violet" type="button" data-action="retry-load" style="margin-top:16px">重新加载</button></div></div>`
+      : state.listView === "grid" ? renderScriptGrid(scripts) : renderScriptTable(scripts);
   return `
     <main class="list-shell">
       <section class="list-head">
@@ -341,7 +367,7 @@ function renderListPage() {
           <button class="primary-button violet" type="button" data-action="new-script">＋ 新建剧本</button>
         </div>
       </section>
-      ${state.listView === "grid" ? renderScriptGrid(scripts) : renderScriptTable(scripts)}
+      <div class="list-scroll">${bodyContent}</div>
       <footer class="pagination">
         <span>共 ${scripts.length} 条</span>
         <select class="small-select" aria-label="每页条数">
@@ -360,7 +386,12 @@ function renderListPage() {
 }
 
 function renderScriptGrid(scripts) {
-  if (!scripts.length) return `<div class="empty-state"><div><h3>没有匹配的剧本</h3><p>调整搜索条件，或创建一个新剧本。</p></div></div>`;
+  if (!scripts.length) {
+    const msg = state.search.trim()
+      ? `<h3>没有匹配的剧本</h3><p>调整搜索条件试试。</p>`
+      : `<h3>暂无剧本</h3><p>点击右上角「＋ 新建剧本」开始创作。</p>`;
+    return `<div class="empty-state"><div>${msg}</div></div>`;
+  }
   return `
     <section class="scripts-grid">
       ${scripts.map((script) => `
@@ -370,12 +401,11 @@ function renderScriptGrid(scripts) {
             <span class="cover-letter">${escapeHtml(firstChar(script.name))}</span>
           </div>
           <div class="card-body">
-            <h3>${escapeHtml(script.name)}</h3>
-            <div class="meta">▣ ${escapeHtml(script.createdAt)}</div>
+            <h3 style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(script.name)}</h3>
+            <div class="meta">第 ${script.currentStep || 1} 步 · ${escapeHtml((script.updatedAt || script.createdAt || "").slice(0, 10))}</div>
             <div class="card-actions">
-              <button class="primary-button violet" type="button" data-action="open-script" data-id="${script.id}">✎ 开始</button>
-              <button class="ghost-button" type="button" data-action="detail-script" data-id="${script.id}">明细</button>
-              <button class="danger-button" type="button" data-action="request-delete" data-id="${script.id}" aria-label="删除">⌫</button>
+              <button class="primary-button violet" style="flex:1" type="button" data-action="open-script" data-id="${script.id}">打开</button>
+              <button class="danger-button" type="button" data-action="request-delete" data-id="${script.id}" aria-label="删除">🗑</button>
             </div>
           </div>
         </article>
@@ -422,41 +452,54 @@ function renderWorkspace() {
         <button class="ghost-button" type="button" data-action="show-versions">▤ 保存版本</button>
       </div>
     </section>
-    <section class="workspace ${state.assistantOpen ? "with-assistant" : ""}">
+    <section class="workspace ${state.sidebarCollapsed ? "sidebar-collapsed" : ""}">
       ${renderSidebar(script)}
-      <main class="stage">
+      <main class="stage ${script.currentStep === 1 ? "stage-chat" : ""}">
         <div class="stage-inner">${renderCurrentStep(script)}</div>
       </main>
-      ${state.assistantOpen ? renderAssistant(script) : ""}
     </section>
-    <button class="assistant-toggle" type="button" data-action="toggle-assistant">${state.assistantOpen ? "收起 AI" : "AI 助手"}</button>
   `;
 }
 
 function renderSidebar(script) {
+  const collapsed = state.sidebarCollapsed;
   return `
-    <aside class="sidebar">
+    <aside class="sidebar ${collapsed ? "collapsed" : ""}">
+      <button class="sidebar-toggle" type="button" data-action="toggle-sidebar" title="${collapsed ? "展开侧边栏" : "收起侧边栏"}">
+        ${collapsed ? "›" : "‹"}
+      </button>
       <div class="step-list">
         ${steps.map((step) => {
           const done = script.completionRate >= step.progress || step.id < script.currentStep;
-          const warn = step.id >= 4 && hasPendingDownstream(script);
+          const locked = !done && step.id > script.currentStep;
+          const warn = step.id >= 5 && hasPendingDownstream(script);
+          const badge = warn && step.id === 5 ? "⚠" : done ? "✓" : "";
+          if (collapsed) {
+            return `
+              <button class="step-item collapsed-item ${script.currentStep === step.id ? "active" : ""} ${done ? "done" : ""} ${locked ? "locked" : ""}" type="button" data-action="set-step" data-step="${step.id}" ${locked ? "disabled" : ""} title="${step.title}">
+                <span class="step-no">${badge || String(step.id).padStart(2, "0")}</span>
+              </button>
+            `;
+          }
           return `
-            <button class="step-item ${script.currentStep === step.id ? "active" : ""} ${done ? "done" : ""}" type="button" data-action="set-step" data-step="${step.id}">
+            <button class="step-item ${script.currentStep === step.id ? "active" : ""} ${done ? "done" : ""} ${locked ? "locked" : ""}" type="button" data-action="set-step" data-step="${step.id}" ${locked ? "disabled" : ""}>
               <span class="step-no">${String(step.id).padStart(2, "0")}</span>
               <span>
                 <span class="step-title">${step.title}</span>
                 <span class="step-sub">${step.sub}</span>
               </span>
-              <span>${warn && step.id === 4 ? "⚠" : done ? "✓" : ""}</span>
+              <span>${badge}</span>
             </button>
           `;
         }).join("")}
       </div>
-      <div class="progress-block">
-        <div>作品完成度</div>
-        <div class="progress-track"><div class="progress-fill" style="width:${script.completionRate}%"></div></div>
-        <div class="progress-value">${script.completionRate}%</div>
-      </div>
+      ${collapsed ? "" : `
+        <div class="progress-block">
+          <div>作品完成度</div>
+          <div class="progress-track"><div class="progress-fill" style="width:${script.completionRate}%"></div></div>
+          <div class="progress-value">${script.completionRate}%</div>
+        </div>
+      `}
     </aside>
   `;
 }
@@ -466,7 +509,8 @@ function renderCurrentStep(script) {
   if (script.currentStep === 2) return renderStepTwo(script);
   if (script.currentStep === 3) return renderStepThree(script);
   if (script.currentStep === 4) return renderStepFour(script);
-  return renderStepFive(script);
+  if (script.currentStep === 5) return renderStepFive(script);
+  return renderStepSix(script);
 }
 
 function renderStepHead(step, title, subtitle, actionHtml = "") {
@@ -484,45 +528,119 @@ function renderStepHead(step, title, subtitle, actionHtml = "") {
 
 function renderStepOne(script) {
   const pos = script.storyPositioning;
-  return `
-    ${renderStepHead(1, "故事定位", "先确定受众、题材和情绪，再让 AI 开始创作。", `<button class="primary-button" type="button" data-action="generate-outline">✳ 生成故事大纲</button>`)}
-    <section class="panel panel-pad">
-      <div class="positioning-grid">
-        <div>
-          <div class="form-grid">
-            <div class="field">
-              <label>作品标题</label>
-              <input data-bind="name" value="${escapeAttr(script.name)}" placeholder="请输入作品标题" />
-            </div>
-            <div class="field">
-              <label>作品类型</label>
-              <div class="chip-line">
-                ${["短剧", "动漫", "网文"].map((item) => `<button class="tag ${pos.workType === item ? "selected" : ""}" type="button" data-action="set-position" data-key="workType" data-value="${item}">${item}</button>`).join("")}
-              </div>
-            </div>
-            <div class="field">
-              <label>预计集数</label>
-              <div class="chip-line">
-                ${[3, 5, 10, 15, 20, 50, 100].map((count) => `<button class="tag ${Number(pos.episodeCount) === count ? "selected" : ""}" type="button" data-action="set-position" data-key="episodeCount" data-value="${count}">${count}集</button>`).join("")}
-                <input class="small-input" type="number" min="1" max="100" data-bind="storyPositioning.episodeCount" value="${escapeAttr(pos.episodeCount)}" aria-label="自定义集数" />
-              </div>
+  const msgs = (script.aiConversation || []).filter((m) => !m.step || m.step === 1);
+  const isChatting = state.generation?.active && state.generation.kind === "chat";
+  const isGeneratingOutline = state.generation?.active && state.generation.kind === "outline";
+  const ready = script._chatReady;
+  const inChat = script._chatStarted || msgs.length > 0;
+
+  const bubbles = msgs.map((m) => {
+    const isAi = m.role === "ai";
+    return `<div class="chat-bubble ${isAi ? "ai" : "user"}">
+      ${isAi ? `<span class="chat-avatar">AI</span>` : ""}
+      <div class="chat-text ${isAi ? "md-content" : ""}">${isAi ? renderMd(m.content) : escapeHtml(m.content)}</div>
+      ${!isAi ? `<span class="chat-avatar user-av">你</span>` : ""}
+    </div>`;
+  }).join("");
+
+  const streamingBubble = isChatting
+    ? `<div class="chat-bubble ai streaming">
+        <span class="chat-avatar">AI</span>
+        <div class="chat-text md-content">${renderMd(state.generation.text || "…")}<span class="chat-cursor"></span></div>
+      </div>`
+    : "";
+
+  if (!inChat) {
+    const formSection = `
+      <div class="step1-form">
+        <div class="step1-top-row">
+          <div class="field" style="flex:1;min-width:180px">
+            <label>作品需求</label>
+            <textarea class="step1-name-input" data-bind="name" placeholder="用一句话描述故事核心，如：男频仙侠重生爽文" rows="3">${escapeHtml(script.name)}</textarea>
+          </div>
+          <div class="field">
+            <label>类型</label>
+            <div class="chip-line">
+              ${["短剧","动漫","网文"].map((t) => `<button class="tag ${pos.workType===t?"selected":""}" type="button" data-action="set-position" data-key="workType" data-value="${t}">${t}</button>`).join("")}
             </div>
           </div>
-          ${renderTagSection("AUDIENCE", "受众", "audience", pos.audience)}
-          ${renderTagSection("GENRE", "题材", "genres", pos.genres)}
-          ${renderTagSection("CORE", "核心元素", "coreElements", pos.coreElements)}
-          ${renderTagSection("TONE", "情感基调", "emotionalTone", pos.emotionalTone)}
+          <div class="field">
+            <label>集数</label>
+            <div class="chip-line">
+              ${[5,10,20,50,100].map((n) => `<button class="tag ${Number(pos.episodeCount)===n?"selected":""}" type="button" data-action="set-position" data-key="episodeCount" data-value="${n}">${n}</button>`).join("")}
+              <input class="small-input" type="number" min="1" max="999" data-bind="storyPositioning.episodeCount" value="${escapeAttr(pos.episodeCount)}" style="width:52px" aria-label="自定义集数" />
+            </div>
+          </div>
         </div>
-        <aside class="preview-card">
-          <div class="preview-frame">${escapeHtml(firstChar(script.name))}</div>
-          <div>
-            <h3>${escapeHtml(script.name || "未命名剧本")}</h3>
-            <p class="subtle-note">${escapeHtml(pos.workType)} · ${escapeHtml(pos.episodeCount)}集 · ${(pos.genres || []).slice(0, 4).join(" / ") || "等待题材标签"}</p>
-            <div class="selected-tags">${[...pos.audience, ...pos.coreElements, ...pos.emotionalTone].slice(0, 8).map((tag) => `<span class="mini-chip">${escapeHtml(tag)}</span>`).join("")}</div>
-          </div>
-        </aside>
+        <div class="step1-tag-rows">
+          ${renderInlineTagRow("受众", "audience", pos.audience)}
+          ${renderInlineTagRow("题材", "genres", pos.genres)}
+          ${renderInlineTagRow("元素", "coreElements", pos.coreElements)}
+          ${renderInlineTagRow("基调", "emotionalTone", pos.emotionalTone)}
+        </div>
       </div>
-    </section>
+    `;
+    return `
+      <div class="chat-stage">
+        ${formSection}
+        <div class="step1-start-chat">
+          <p class="muted">选好标签后，与 AI 聊聊细节，帮你生成大纲方案。</p>
+          <button class="primary-button violet" type="button" data-action="start-chat">开始 AI 对话 →</button>
+        </div>
+      </div>
+    `;
+  }
+
+  if (isGeneratingOutline) {
+    return `
+      <div class="chat-stage chat-generating">
+        <div class="chat-gen-status">
+          <div class="spinner"></div>
+          <p>${escapeHtml(state.generation.text || "AI 正在生成大纲，请稍候…")}</p>
+          <button class="ghost-button" type="button" data-action="stop-generation">停止</button>
+        </div>
+      </div>
+    `;
+  }
+
+  const tags = [pos.workType, pos.episodeCount ? `${pos.episodeCount}集` : null, ...(pos.genres||[]), ...(pos.audience||[])].filter(Boolean);
+  const contextBar = `
+    <div class="chat-context-bar">
+      <span class="chat-context-name">${escapeHtml(script.name || "未命名")}</span>
+      ${tags.map((t) => `<span class="chat-context-tag">${escapeHtml(String(t))}</span>`).join("")}
+    </div>
+  `;
+
+  return `
+    <div class="chat-stage">
+      ${contextBar}
+      <div class="chat-messages" id="chat-msgs">
+        ${bubbles}
+        ${streamingBubble}
+      </div>
+      <div class="chat-input-area">
+        ${ready ? `<button class="primary-button violet confirm-outline-btn" type="button" data-action="confirm-chat-outline">✳ 确认，生成大纲</button>` : ""}
+        <div class="chat-input-row">
+          <textarea class="chat-input" data-ui="chat-input" placeholder="补充细节、回答 AI 的问题… (Enter 发送)" rows="1" ${isChatting ? "disabled" : ""}></textarea>
+          <button class="chat-send-btn" type="button" data-action="send-chat" ${isChatting ? "disabled" : ""}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderInlineTagRow(label, key, selected) {
+  const options = [...new Set([...(tagOptions[key] || []), ...(state.extraTags[key] || []), ...(selected || [])])];
+  return `
+    <div class="inline-tag-row">
+      <span class="inline-tag-label">${label}</span>
+      <div class="inline-tag-list">
+        ${options.map((tag) => `<button class="itag ${(selected||[]).includes(tag) ? "selected" : ""}" type="button" data-action="toggle-tag" data-key="${key}" data-value="${escapeAttr(tag)}">${escapeHtml(tag)}</button>`).join("")}
+        ${key !== "audience" ? `<input class="small-input itag-input" data-custom-input="${key}" placeholder="自定义…" /><button class="ghost-button itag-add" type="button" data-action="add-custom-tag" data-key="${key}">+</button>` : ""}
+      </div>
+    </div>
   `;
 }
 
@@ -560,8 +678,20 @@ function renderStepTwo(script) {
   }
   const plans = script.storyOutline.plans || [];
   const selectedPlan = plans[script.storyOutline.selectedPlanIndex] || plans[0];
+
+  if (!script._serverLoaded && !plans.length) {
+    return `
+      ${renderStepHead(2, "生成故事大纲", "正在加载…")}
+      <section class="panel panel-pad">
+        <div class="empty-state" style="margin-top:22px">
+          <div><div class="spinner"></div><p>正在从服务器加载大纲内容…</p></div>
+        </div>
+      </section>
+    `;
+  }
+
   return `
-    ${renderStepHead(2, "生成故事大纲", "选择一个叙事方向，或让 AI 融合多个方案。", `<button class="primary-button" type="button" data-action="confirm-outline" ${plans.length ? "" : "disabled"}>✳ 确认大纲，生成角色</button>`)}
+    ${renderStepHead(2, "生成故事大纲", "选择方向，或与 AI 打磨大纲细节。", `<button class="primary-button" type="button" data-action="confirm-outline" ${plans.length ? "" : "disabled"}>✳ 确认大纲，进入世界观</button>`)}
     <section class="panel panel-pad">
       <div class="panel-head">
         <div class="tabs">
@@ -574,6 +704,54 @@ function renderStepTwo(script) {
         </div>
       </div>
       ${!plans.length ? renderEmptyOutline() : state.outlineTab === "plans" ? renderOutlinePlans(script, plans) : renderOutlineEditor(selectedPlan)}
+    </section>
+    ${plans.length ? renderOutlineRefineChat(script) : ""}
+  `;
+}
+
+function renderOutlineRefineChat(script) {
+  const msgs = script.outlineConversation || [];
+  const isChatting = state.generation?.active && state.generation.kind === "outline-refine";
+  const isApplying = state.generation?.active && state.generation.kind === "outline-refine-apply";
+  const isAnyBusy = isChatting || isApplying;
+  const canApply = msgs.length > 0 && !isAnyBusy;
+
+  const bubbles = msgs.map((m) => {
+    const isAi = m.role === "ai";
+    return `<div class="chat-bubble ${isAi ? "ai" : "user"}">
+      ${isAi ? `<span class="chat-avatar">AI</span>` : ""}
+      <div class="chat-text ${isAi ? "md-content" : ""}">${isAi ? renderMd(m.content) : escapeHtml(m.content)}</div>
+      ${!isAi ? `<span class="chat-avatar user-av">你</span>` : ""}
+    </div>`;
+  }).join("");
+
+  const streamingBubble = isChatting
+    ? `<div class="chat-bubble ai"><span class="chat-avatar">AI</span><div class="chat-text md-content">${renderMd(state.generation.text || "…")}<span class="chat-cursor"></span></div></div>`
+    : "";
+
+  const applyingOverlay = isApplying
+    ? `<div class="refine-applying"><span class="spinner" style="width:18px;height:18px;border-width:2px"></span>AI 正在根据讨论重新生成大纲…</div>`
+    : "";
+
+  return `
+    <section class="panel panel-pad outline-refine-panel">
+      <div class="panel-head">
+        <h3>与 AI 打磨大纲</h3>
+        <span class="muted" style="font-size:12px">与 AI 讨论修改方向，确认后一键重新生成完整大纲</span>
+      </div>
+      ${applyingOverlay}
+      ${msgs.length ? `<div class="outline-refine-msgs" id="outline-refine-msgs">${bubbles}${streamingBubble}</div>` : ""}
+      ${canApply ? `
+        <button class="primary-button violet refine-apply-btn ${script._outlineRefineReady ? "ready-glow" : ""}" type="button" data-action="apply-outline-refine">
+          ✳ 确认，重新生成大纲
+        </button>
+      ` : ""}
+      <div class="chat-input-row" style="margin-top:8px">
+        <textarea class="chat-input" data-ui="outline-refine-input" placeholder="例：让第二幕冲突更激烈，结局改成开放式…" rows="1" ${isAnyBusy ? "disabled" : ""}></textarea>
+        <button class="chat-send-btn" type="button" data-action="send-outline-refine" ${isAnyBusy ? "disabled" : ""}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+        </button>
+      </div>
     </section>
   `;
 }
@@ -590,7 +768,7 @@ function renderOutlinePlans(script, plans) {
             </div>
             <label class="muted"><input type="checkbox" data-action="toggle-outline-merge" data-id="${plan.id}" ${state.selectedOutlineIds.includes(plan.id) ? "checked" : ""} /> 融合</label>
           </div>
-          <div class="outline-content">${escapeHtml(plan.content)}</div>
+          <div class="outline-content md-content">${renderMd(plan.content)}</div>
           <div class="card-foot">
             <span class="muted">${escapeHtml(plan.generatedAt || "")}</span>
             <button class="primary-button" type="button" data-action="select-outline" data-index="${index}">选用此方案</button>
@@ -616,7 +794,6 @@ function renderEmptyOutline() {
   return `
     <div class="empty-state" style="margin-top:22px">
       <div>
-        <div class="spinner"></div>
         <h3>故事主线大纲虚位以待</h3>
         <p>AI 将根据您的选题和故事定位标签，为您生成结构清晰、爆点十足的故事主线大纲。</p>
         <button class="primary-button" type="button" data-action="generate-outline">✳ 极速生成故事大纲</button>
@@ -626,15 +803,116 @@ function renderEmptyOutline() {
 }
 
 function renderStepThree(script) {
-  const isGenerating = state.generation?.active && state.generation.kind === "characters";
+  const isGenerating = state.generation?.active && state.generation.kind === "worldbuilding";
+  const isApplying = state.generation?.active && state.generation.kind === "wb-refine-apply";
+
   if (isGenerating) {
     return `
-      ${renderStepHead(3, "搭建角色关系", "AI 正在基于大纲抽取主角、反派和关键配角。", `<button class="ghost-button" type="button" data-action="stop-generation">停止生成</button>`)}
+      ${renderStepHead(3, "世界观设定", "AI 正在构建故事世界的规则、背景与舞台…", `<button class="ghost-button" type="button" data-action="stop-generation">停止生成</button>`)}
       <section class="panel panel-pad">${renderStreamState()}</section>
     `;
   }
+
+  const contentPanel = script.worldbuilding ? `
+    <div class="field">
+      <div class="wb-field-head">
+        <label>世界观设定</label>
+        ${script._worldbuildingEditing
+          ? `<button class="ghost-button" type="button" data-action="wb-toggle-edit" style="font-size:12px;padding:3px 10px">预览</button>`
+          : `<button class="ghost-button" type="button" data-action="wb-toggle-edit" style="font-size:12px;padding:3px 10px">编辑</button>`
+        }
+      </div>
+      ${script._worldbuildingEditing
+        ? `<textarea class="editor worldbuilding-edit" data-bind="worldbuilding" style="min-height:320px">${escapeHtml(script.worldbuilding)}</textarea>`
+        : `<div class="worldbuilding-preview md-content">${renderMd(script.worldbuilding)}</div>`
+      }
+    </div>
+  ` : `
+    <div class="empty-state" style="margin:22px 0">
+      <div><h3>世界观尚未生成</h3><p>点击「AI 生成世界观」，或在右侧与 AI 直接描述需求。</p></div>
+    </div>
+  `;
+
   return `
-    ${renderStepHead(3, "搭建角色关系", "角色小传可以就地编辑，后续会作为生成依据。", `<button class="primary-button" type="button" data-action="confirm-characters">✳ 确认角色，生成分集</button>`)}
+    ${renderStepHead(3, "世界观设定", "AI 生成世界规则，可与 AI 对话打磨后确认。",
+      `<div class="chip-line">
+        <button class="ghost-button violet" type="button" data-action="generate-worldbuilding">↻ ${script.worldbuilding ? "重新生成" : "AI 生成世界观"}</button>
+        <button class="primary-button" type="button" data-action="confirm-worldbuilding" ${script.worldbuilding ? "" : "disabled"}>✳ 确认，生成角色</button>
+      </div>`)}
+    <div class="wb-layout">
+      <section class="panel panel-pad wb-main">${contentPanel}</section>
+      <div class="wb-chat-panel">${renderWbChat(script, isApplying)}</div>
+    </div>
+  `;
+}
+
+function renderWbChat(script, isApplying = false) {
+  const msgs = script.wbConversation || [];
+  const isChatting = state.generation?.active && state.generation.kind === "wb-refine";
+  const isAnyBusy = isChatting || isApplying;
+  const canApply = msgs.length > 0 && !isAnyBusy;
+
+  const bubbles = msgs.map((m) => {
+    const isAi = m.role === "ai";
+    return `<div class="chat-bubble ${isAi ? "ai" : "user"}">
+      ${isAi ? `<span class="chat-avatar">AI</span>` : ""}
+      <div class="chat-text ${isAi ? "md-content" : ""}">${isAi ? renderMd(m.content) : escapeHtml(m.content)}</div>
+      ${!isAi ? `<span class="chat-avatar user-av">你</span>` : ""}
+    </div>`;
+  }).join("");
+
+  const streamingBubble = isChatting
+    ? `<div class="chat-bubble ai"><span class="chat-avatar">AI</span><div class="chat-text md-content">${renderMd(state.generation.text || "…")}<span class="chat-cursor"></span></div></div>`
+    : "";
+
+  const applyingRow = isApplying
+    ? `<div class="refine-applying"><span class="spinner" style="width:18px;height:18px;border-width:2px"></span>AI 正在重新生成世界观…</div>`
+    : "";
+
+  return `
+    <div class="panel panel-pad wb-chat-inner">
+      <div class="panel-head">
+        <h3>与 AI 打磨世界观</h3>
+        <span class="muted" style="font-size:12px">描述修改意见，确认后重新生成</span>
+      </div>
+      ${applyingRow}
+      ${msgs.length ? `<div class="wb-msgs" id="wb-msgs">${bubbles}${streamingBubble}</div>` : `<div class="wb-msgs-empty">还没有对话，可以直接告诉 AI 你想要的世界观风格。</div>`}
+      ${canApply ? `
+        <button class="primary-button violet refine-apply-btn ${script._wbRefineReady ? "ready-glow" : ""}" type="button" data-action="apply-wb-refine">
+          ✳ 确认，重新生成世界观
+        </button>
+      ` : ""}
+      <div class="chat-input-row" style="margin-top:8px">
+        <textarea class="chat-input" data-ui="wb-chat-input" placeholder="例：设定为近未来科技朋克风格，加入权力斗争…" rows="1" ${isAnyBusy ? "disabled" : ""}></textarea>
+        <button class="chat-send-btn" type="button" data-action="send-wb-chat" ${isAnyBusy ? "disabled" : ""}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+        </button>
+      </div>
+    </div>
+  `;
+}
+
+function renderStepFour(script) {
+  const isGenerating = state.generation?.active && state.generation.kind === "characters";
+
+  if (isGenerating) {
+    return `
+      ${renderStepHead(4, "搭建角色关系", "AI 正在基于大纲抽取主角、反派和关键配角。", `<button class="ghost-button" type="button" data-action="stop-generation">停止生成</button>`)}
+      <section class="panel panel-pad">${renderStreamState()}</section>
+    `;
+  }
+  if (!script._serverLoaded && !script.characters.length) {
+    return `
+      ${renderStepHead(4, "搭建角色关系", "正在加载…")}
+      <section class="panel panel-pad">
+        <div class="empty-state" style="margin-top:22px">
+          <div><div class="spinner"></div><p>正在从服务器加载角色数据…</p></div>
+        </div>
+      </section>
+    `;
+  }
+  return `
+    ${renderStepHead(4, "搭建角色关系", "角色小传可以就地编辑，后续会作为生成依据。", `<button class="primary-button" type="button" data-action="confirm-characters">✳ 确认角色，生成分集</button>`)}
     <section class="panel panel-pad">
       <div class="panel-head">
         <div class="title-row"><h3>角色设定</h3><span class="muted">共 ${script.characters.length} 位角色</span></div>
@@ -685,14 +963,14 @@ function renderStepFour(script) {
   const isGenerating = state.generation?.active && state.generation.kind === "episodes";
   if (isGenerating) {
     return `
-      ${renderStepHead(4, "拆解分集规划", "AI 正在为每集生成目标、冲突和结尾钩子。", `<button class="ghost-button" type="button" data-action="stop-generation">停止生成</button>`)}
+      ${renderStepHead(5, "拆解分集规划", "AI 正在为每集生成目标、冲突和结尾钩子。", `<button class="ghost-button" type="button" data-action="stop-generation">停止生成</button>`)}
       <section class="panel panel-pad">${renderStreamState()}</section>
     `;
   }
   ensureEpisodeSelection(script);
   const episode = selectedEpisode(script);
   return `
-    ${renderStepHead(4, "拆解分集规划", "每集都要有目标、冲突和结尾钩子。", `<button class="primary-button" type="button" data-action="enter-writing">进入正文创作</button>`)}
+    ${renderStepHead(5, "拆解分集规划", "每集都要有目标、冲突和结尾钩子。", `<button class="primary-button" type="button" data-action="enter-writing">进入正文创作</button>`)}
     <section class="panel panel-pad">
       ${!script.episodes.length ? `
         <div class="empty-state">
@@ -736,13 +1014,13 @@ function renderEpisodeCard(ep) {
   `;
 }
 
-function renderStepFive(script) {
+function renderStepSix(script) {
   ensureEpisodeSelection(script);
   const episode = selectedEpisode(script);
   const isGenerating = state.generation?.active && state.generation.kind === "script";
   const editorText = isGenerating ? state.generation.text : episode?.scriptContent;
   return `
-    ${renderStepHead(5, "逐集生成正文", "生成、重写、保存版本都在当前页面完成。", `<button class="ghost-button cyan" type="button" data-action="validate-script">校验</button>`)}
+    ${renderStepHead(6, "逐集生成正文", "生成、重写、保存版本都在当前页面完成。", `<button class="ghost-button cyan" type="button" data-action="validate-script">校验</button>`)}
     <section class="panel panel-pad">
       ${!script.episodes.length ? `
         <div class="empty-state">
@@ -803,26 +1081,6 @@ function renderStreamState() {
   `;
 }
 
-function renderAssistant(script) {
-  const messages = script.aiConversation || [];
-  const quick = quickPrompts(script.currentStep);
-  return `
-    <aside class="assistant">
-      <div class="panel-head">
-        <h3>AI 助手</h3>
-        <button class="icon-button" type="button" data-action="toggle-assistant">×</button>
-      </div>
-      <div class="quick-tags">${quick.map((item) => `<button type="button" data-action="quick-prompt" data-value="${escapeAttr(item)}">${escapeHtml(item)}</button>`).join("")}</div>
-      <div class="chat-list">
-        ${messages.map((msg) => `<div class="message ${msg.role === "user" ? "user" : "ai"}">${escapeHtml(msg.content)}</div>`).join("")}
-      </div>
-      <div class="chat-input">
-        <input data-chat-input placeholder="输入修改要求..." />
-        <button class="primary-button" type="button" data-action="send-chat">发送</button>
-      </div>
-    </aside>
-  `;
-}
 
 function renderPortal() {
   const toasts = state.toasts.map((item) => `<div class="toast">${escapeHtml(item)}</div>`).join("");
@@ -934,15 +1192,31 @@ function onClick(event) {
     state.view = "workspace";
     toast("已创建新剧本。");
     scheduleSave();
+    syncToServer(next);
     render();
   }
 
   if (action === "open-script") {
-    state.activeScriptId = button.dataset.id;
-    const next = activeScript();
-    state.selectedEpisodeId = next?.episodes?.[0]?.id || "";
+    const id = button.dataset.id;
+    state.activeScriptId = id;
     state.view = "workspace";
     state.modal = null;
+    const target = state.scripts.find((s) => s.id === id);
+    if (target && !target._serverLoaded) {
+      render();
+      fetch(`/api/project/${id}`)
+        .then((r) => r.json())
+        .then((data) => {
+          const full = serverProjectToScript(data);
+          const idx = state.scripts.findIndex((s) => s.id === id);
+          if (idx !== -1) state.scripts[idx] = full;
+          state.selectedEpisodeId = full.episodes?.[0]?.id || "";
+          render();
+        })
+        .catch(() => render());
+      return;
+    }
+    state.selectedEpisodeId = target?.episodes?.[0]?.id || "";
     render();
   }
 
@@ -968,18 +1242,45 @@ function onClick(event) {
   }
 
   if (action === "confirm-delete") {
-    state.scripts = state.scripts.filter((item) => item.id !== button.dataset.id);
-    if (!state.scripts.length) state.scripts.push(createBlankScript());
-    state.activeScriptId = state.scripts[0].id;
+    const pid = button.dataset.id;
+    deleteFromServer(pid);
+    state.scripts = state.scripts.filter((item) => item.id !== pid);
+    state.activeScriptId = state.scripts[0]?.id || "";
     state.modal = null;
     toast("剧本已删除。");
     scheduleSave();
     render();
   }
 
+  if (action === "retry-load") {
+    state._serverLoading = true;
+    state._serverError = false;
+    render();
+    loadProjectsFromServer().then((serverScripts) => {
+      state._serverLoading = false;
+      if (serverScripts === null) {
+        state._serverError = true;
+      } else {
+        state._serverError = false;
+        state.scripts = serverScripts;
+        state.activeScriptId = serverScripts[0]?.id || "";
+      }
+      render();
+    }).catch(() => {
+      state._serverLoading = false;
+      state._serverError = true;
+      render();
+    });
+  }
+
   if (action === "close-modal") {
     state.modal = null;
     renderPortal();
+  }
+
+  if (action === "toggle-sidebar") {
+    state.sidebarCollapsed = !state.sidebarCollapsed;
+    render();
   }
 
   if (action === "set-step" && script) {
@@ -1024,6 +1325,62 @@ function onClick(event) {
     runGeneration("outline");
   }
 
+  if (action === "send-chat" && script) {
+    const input = document.querySelector("[data-ui='chat-input']");
+    const text = input?.value.trim();
+    if (!text || state.generation?.active) return;
+    script.aiConversation = script.aiConversation || [];
+    script.aiConversation.push({ id: uid(), role: "user", step: 1, content: text, appliedToContent: false });
+    generationRun += 1;
+    const runId = generationRun;
+    state.generation = { active: true, kind: "chat", text: "" };
+    render();
+    scrollChatToBottom();
+    genChat(script, runId).catch((err) => {
+      console.error("chat error:", err);
+      state.generation = null;
+      toast("AI 回复失败，请重试。");
+      render();
+    });
+  }
+
+  if (action === "start-chat" && script) {
+    if (state.generation?.active) return;
+    script._chatStarted = true;
+    script.aiConversation = script.aiConversation || [];
+    const pos = script.storyPositioning;
+    const parts = [];
+    if (script.name) parts.push(`作品名：${script.name}`);
+    if (pos.workType) parts.push(`类型：${pos.workType}`);
+    if (pos.episodeCount) parts.push(`集数：${pos.episodeCount} 集`);
+    if (pos.audience?.length) parts.push(`受众：${pos.audience.join("、")}`);
+    if (pos.genres?.length) parts.push(`题材：${pos.genres.join("、")}`);
+    if (pos.coreElements?.length) parts.push(`核心元素：${pos.coreElements.join("、")}`);
+    if (pos.emotionalTone?.length) parts.push(`情感基调：${pos.emotionalTone.join("、")}`);
+    const initMsg = parts.join("，") || "我想创作一个剧本";
+    script.aiConversation.push({ id: uid(), role: "user", step: 1, content: initMsg, appliedToContent: false });
+    generationRun += 1;
+    const runId = generationRun;
+    state.generation = { active: true, kind: "chat", text: "" };
+    persist();
+    render();
+    scrollChatToBottom();
+    genChat(script, runId).catch((err) => {
+      console.error("chat error:", err);
+      state.generation = null;
+      toast("AI 回复失败，请重试。");
+      render();
+    });
+  }
+
+  if (action === "confirm-chat-outline" && script) {
+    const step1Msgs = (script.aiConversation || []).filter((m) => !m.step || m.step === 1);
+    script.chatRequirements = step1Msgs
+      .map((m) => `${m.role === "user" ? "用户" : "AI"}：${m.content}`)
+      .join("\n\n");
+    runGeneration("outline");
+  }
+
   if (action === "set-outline-tab") {
     state.outlineTab = button.dataset.tab;
     render();
@@ -1051,8 +1408,75 @@ function onClick(event) {
     render();
   }
 
-  if (action === "confirm-outline") {
-    runGeneration("characters");
+  if (action === "confirm-outline" && script) {
+    script.currentStep = 3;
+    persist();
+    render();
+  }
+
+  if (action === "apply-outline-refine") {
+    runGeneration("outline-refine-apply");
+  }
+
+  if (action === "wb-toggle-edit" && script) {
+    script._worldbuildingEditing = !script._worldbuildingEditing;
+    render();
+  }
+
+  if (action === "send-wb-chat" && script) {
+    if (state.generation?.active) return;
+    const textarea = document.querySelector('[data-ui="wb-chat-input"]');
+    const text = textarea?.value.trim();
+    if (!text) return;
+    script.wbConversation = script.wbConversation || [];
+    script.wbConversation.push({ id: uid(), role: "user", content: text });
+    generationRun += 1;
+    const runId = generationRun;
+    state.generation = { active: true, kind: "wb-refine", text: "" };
+    if (textarea) textarea.value = "";
+    persist();
+    render();
+    genWbChat(script, runId).catch((err) => {
+      console.error("wb-chat error:", err);
+      toast("对话失败，请重试。");
+      state.generation = null;
+      render();
+    });
+  }
+
+  if (action === "apply-wb-refine") {
+    runGeneration("wb-refine-apply");
+  }
+
+  if (action === "generate-worldbuilding") {
+    runGeneration("worldbuilding");
+  }
+
+  if (action === "confirm-worldbuilding" && script) {
+    script.currentStep = 4;
+    persist();
+    render();
+  }
+
+  if (action === "send-outline-refine" && script) {
+    if (state.generation?.active) return;
+    const textarea = document.querySelector('[data-ui="outline-refine-input"]');
+    const text = textarea?.value.trim();
+    if (!text) return;
+    script.outlineConversation = script.outlineConversation || [];
+    script.outlineConversation.push({ id: uid(), role: "user", content: text });
+    generationRun += 1;
+    const refineRunId = generationRun;
+    state.generation = { active: true, kind: "outline-refine", text: "" };
+    if (textarea) textarea.value = "";
+    persist();
+    render();
+    genOutlineRefine(script, refineRunId).catch((err) => {
+      console.error("outline-refine error:", err);
+      toast("对话失败，请重试。");
+      state.generation = null;
+      render();
+    });
   }
 
   if (action === "generate-characters") {
@@ -1114,7 +1538,7 @@ function onClick(event) {
   }
 
   if (action === "enter-writing" && script) {
-    script.currentStep = 5;
+    script.currentStep = 6;
     updateCompletion(script, 85);
     ensureEpisodeSelection(script);
     scheduleSave();
@@ -1160,21 +1584,6 @@ function onClick(event) {
     renderPortal();
   }
 
-  if (action === "toggle-assistant") {
-    state.assistantOpen = !state.assistantOpen;
-    scheduleSave();
-    render();
-  }
-
-  if (action === "quick-prompt") {
-    sendAssistantMessage(button.dataset.value);
-  }
-
-  if (action === "send-chat") {
-    const input = document.querySelector("[data-chat-input]");
-    const value = input?.value.trim();
-    if (value) sendAssistantMessage(value);
-  }
 
   if (action === "rewrite-selection") {
     rewriteSelection(button.dataset.mode);
@@ -1239,10 +1648,10 @@ function onInput(event) {
 }
 
 function onKeyDown(event) {
-  if (event.key === "Enter" && event.target.matches("[data-chat-input]")) {
+
+  if (event.key === "Enter" && !event.shiftKey && event.target.matches("[data-ui='chat-input']")) {
     event.preventDefault();
-    const value = event.target.value.trim();
-    if (value) sendAssistantMessage(value);
+    document.querySelector("[data-action='send-chat']")?.click();
   }
 }
 
@@ -1256,6 +1665,9 @@ async function runGeneration(kind) {
   render();
   try {
     if (kind === "outline") await genOutline(script, runId);
+    else if (kind === "outline-refine-apply") await genOutlineRefineApply(script, runId);
+    else if (kind === "worldbuilding") await genWorldbuilding(script, runId);
+    else if (kind === "wb-refine-apply") await genWbRefineApply(script, runId);
     else if (kind === "characters") await genCharacters(script, runId);
     else if (kind === "episodes") await genEpisodes(script, runId);
     else if (kind === "script") await genScript(script, runId);
@@ -1265,6 +1677,83 @@ async function runGeneration(kind) {
     toast("生成失败，请检查网络后重试。");
     state.generation = null;
     render();
+  }
+}
+
+function scrollChatToBottom() {
+  requestAnimationFrame(() => {
+    const el = document.getElementById("chat-msgs");
+    if (el) el.scrollTop = el.scrollHeight;
+  });
+}
+
+function scrollRefineToBottom() {
+  requestAnimationFrame(() => {
+    const el = document.getElementById("outline-refine-msgs");
+    if (el) el.scrollTop = el.scrollHeight;
+  });
+}
+
+function scrollWbToBottom() {
+  requestAnimationFrame(() => {
+    const el = document.getElementById("wb-msgs");
+    if (el) el.scrollTop = el.scrollHeight;
+  });
+}
+
+async function genChat(script, runId) {
+  const step1Msgs = (script.aiConversation || []).filter((m) => !m.step || m.step === 1);
+  const apiMessages = step1Msgs.map((m) => ({
+    role: m.role === "ai" ? "assistant" : "user",
+    content: m.content,
+  }));
+
+  const res = await fetch("/api/chat", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ messages: apiMessages }),
+  });
+  if (!res.ok) throw new Error(`chat API: ${res.status}`);
+
+  const aiMsg = { id: uid(), role: "ai", step: 1, content: "", appliedToContent: false };
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  while (true) {
+    if (runId !== generationRun) { reader.cancel(); return; }
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop();
+    for (const line of lines) {
+      if (!line.startsWith("data: ")) continue;
+      try {
+        const evt = JSON.parse(line.slice(6));
+        if (evt.type === "chunk") {
+          state.generation.text += evt.text;
+          render();
+          scrollChatToBottom();
+        } else if (evt.type === "done") {
+          if (runId !== generationRun) return;
+          let fullText = evt.full || state.generation.text;
+          const isReady = /\nREADY\s*$/.test(fullText);
+          if (isReady) {
+            fullText = fullText.replace(/\nREADY\s*$/, "").trimEnd();
+            script._chatReady = true;
+          }
+          aiMsg.content = fullText;
+          script.aiConversation.push(aiMsg);
+          state.generation = null;
+          scheduleSave();
+          render();
+          scrollChatToBottom();
+          return;
+        }
+      } catch {}
+    }
   }
 }
 
@@ -1280,6 +1769,7 @@ async function genOutline(script, runId) {
     body: JSON.stringify({
       storyPositioning: { ...script.storyPositioning, name: script.name },
       episodeCount: script.storyPositioning.episodeCount,
+      requirements: script.chatRequirements || "",
     }),
   });
   if (!res.ok) throw new Error(`outline-plans: ${res.status}`);
@@ -1293,8 +1783,275 @@ async function genOutline(script, runId) {
   if (runId !== generationRun) return;
   applyGeneratedResult("outline", script, data);
   state.generation = null;
-  scheduleSave();
+  persist();
   render();
+}
+
+async function genOutlineRefine(script, runId) {
+  const plan = selectedPlan(script);
+  const outlineText = plan?.content || script.storyOutline.plans[0]?.content || "";
+  const msgs = (script.outlineConversation || []).map((m) => ({
+    role: m.role === "ai" ? "assistant" : "user",
+    content: m.content,
+  }));
+
+  const res = await fetch("/api/refine-outline", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ outline: outlineText, messages: msgs }),
+  });
+  if (!res.ok) throw new Error(`refine-outline: ${res.status}`);
+
+  const aiMsg = { id: uid(), role: "ai", content: "" };
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  while (true) {
+    if (runId !== generationRun) { reader.cancel(); return; }
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop();
+    for (const line of lines) {
+      if (!line.startsWith("data: ")) continue;
+      try {
+        const evt = JSON.parse(line.slice(6));
+        if (evt.type === "chunk") {
+          state.generation.text += evt.text;
+          render();
+          scrollRefineToBottom();
+        } else if (evt.type === "done") {
+          if (runId !== generationRun) return;
+          let fullText = evt.full || state.generation.text;
+          const isReady = /\nOUTLINE_READY\s*$/.test(fullText);
+          if (isReady) {
+            fullText = fullText.replace(/\nOUTLINE_READY\s*$/, "").trimEnd();
+            script._outlineRefineReady = true;
+          }
+          aiMsg.content = fullText;
+          script.outlineConversation = script.outlineConversation || [];
+          script.outlineConversation.push(aiMsg);
+          state.generation = null;
+          persist();
+          render();
+          scrollRefineToBottom();
+          return;
+        }
+      } catch {}
+    }
+  }
+}
+
+async function genOutlineRefineApply(script, runId) {
+  const plan = selectedPlan(script);
+  const outlineText = plan?.content || script.storyOutline.plans[0]?.content || "";
+  const conversation = (script.outlineConversation || []).map((m) => ({
+    role: m.role === "ai" ? "assistant" : "user",
+    content: m.content,
+  }));
+
+  if (runId !== generationRun) return;
+  state.generation.text = "";
+  state.generation.progress = 15;
+  render();
+
+  const res = await fetch("/api/apply-outline-refine", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ outline: outlineText, conversation }),
+  });
+  if (!res.ok) throw new Error(`apply-outline-refine: ${res.status}`);
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let finished = false;
+
+  while (!finished) {
+    if (runId !== generationRun) { reader.cancel(); return; }
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop();
+    for (const line of lines) {
+      if (!line.startsWith("data: ")) continue;
+      try {
+        const evt = JSON.parse(line.slice(6));
+        if (evt.type === "chunk") {
+          state.generation.text += evt.text;
+          state.generation.progress = Math.min(90, state.generation.progress + 0.4);
+          render();
+        } else if (evt.type === "done") {
+          finished = true;
+          if (runId !== generationRun) return;
+          applyGeneratedResult("outline-refine-apply", script, evt.full || state.generation.text);
+          state.generation = null;
+          persist();
+          render();
+        }
+      } catch {}
+    }
+  }
+}
+
+async function genWorldbuilding(script, runId) {
+  if (runId !== generationRun) return;
+  state.generation.text = "AI 正在构建世界观，请稍候…";
+  state.generation.progress = 20;
+  render();
+
+  const plan = selectedPlan(script);
+  const outlineText = plan?.content || "";
+
+  const res = await fetch("/api/worldbuilding", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      outline: outlineText,
+      requirements: script.chatRequirements || "",
+    }),
+  });
+  if (!res.ok) throw new Error(`worldbuilding: ${res.status}`);
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let finished = false;
+
+  while (!finished) {
+    if (runId !== generationRun) { reader.cancel(); return; }
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop();
+    for (const line of lines) {
+      if (!line.startsWith("data: ")) continue;
+      try {
+        const evt = JSON.parse(line.slice(6));
+        if (evt.type === "chunk") {
+          state.generation.text += evt.text;
+          state.generation.progress = Math.min(90, state.generation.progress + 0.5);
+          render();
+        } else if (evt.type === "done") {
+          finished = true;
+          if (runId !== generationRun) return;
+          const fullText = evt.full || state.generation.text;
+          applyGeneratedResult("worldbuilding", script, fullText);
+          state.generation = null;
+          persist();
+          render();
+        }
+      } catch {}
+    }
+  }
+}
+
+async function genWbChat(script, runId) {
+  const msgs = (script.wbConversation || []).map((m) => ({
+    role: m.role === "ai" ? "assistant" : "user",
+    content: m.content,
+  }));
+
+  const res = await fetch("/api/refine-worldbuilding", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ worldbuilding: script.worldbuilding || "", messages: msgs }),
+  });
+  if (!res.ok) throw new Error(`refine-worldbuilding: ${res.status}`);
+
+  const aiMsg = { id: uid(), role: "ai", content: "" };
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  while (true) {
+    if (runId !== generationRun) { reader.cancel(); return; }
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop();
+    for (const line of lines) {
+      if (!line.startsWith("data: ")) continue;
+      try {
+        const evt = JSON.parse(line.slice(6));
+        if (evt.type === "chunk") {
+          state.generation.text += evt.text;
+          render();
+          scrollWbToBottom();
+        } else if (evt.type === "done") {
+          if (runId !== generationRun) return;
+          let fullText = evt.full || state.generation.text;
+          if (/\nWB_READY\s*$/.test(fullText)) {
+            fullText = fullText.replace(/\nWB_READY\s*$/, "").trimEnd();
+            script._wbRefineReady = true;
+          }
+          aiMsg.content = fullText;
+          script.wbConversation.push(aiMsg);
+          state.generation = null;
+          persist();
+          render();
+          scrollWbToBottom();
+          return;
+        }
+      } catch {}
+    }
+  }
+}
+
+async function genWbRefineApply(script, runId) {
+  const conversation = (script.wbConversation || []).map((m) => ({
+    role: m.role === "ai" ? "assistant" : "user",
+    content: m.content,
+  }));
+
+  if (runId !== generationRun) return;
+  state.generation.text = "";
+  state.generation.progress = 15;
+  render();
+
+  const res = await fetch("/api/apply-worldbuilding-refine", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ worldbuilding: script.worldbuilding || "", conversation }),
+  });
+  if (!res.ok) throw new Error(`apply-worldbuilding-refine: ${res.status}`);
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let finished = false;
+
+  while (!finished) {
+    if (runId !== generationRun) { reader.cancel(); return; }
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop();
+    for (const line of lines) {
+      if (!line.startsWith("data: ")) continue;
+      try {
+        const evt = JSON.parse(line.slice(6));
+        if (evt.type === "chunk") {
+          state.generation.text += evt.text;
+          state.generation.progress = Math.min(90, state.generation.progress + 0.4);
+          render();
+        } else if (evt.type === "done") {
+          finished = true;
+          if (runId !== generationRun) return;
+          applyGeneratedResult("wb-refine-apply", script, evt.full || state.generation.text);
+          state.generation = null;
+          persist();
+          render();
+        }
+      } catch {}
+    }
+  }
 }
 
 async function genCharacters(script, runId) {
@@ -1321,7 +2078,7 @@ async function genCharacters(script, runId) {
   if (runId !== generationRun) return;
   applyGeneratedResult("characters", script, rawChars);
   state.generation = null;
-  scheduleSave();
+  persist();
   render();
 }
 
@@ -1352,7 +2109,7 @@ async function genEpisodes(script, runId) {
   if (runId !== generationRun) return;
   applyGeneratedResult("episodes", script, data);
   state.generation = null;
-  scheduleSave();
+  persist();
   render();
 }
 
@@ -1404,7 +2161,7 @@ async function genScript(script, runId) {
           if (runId !== generationRun) return;
           applyGeneratedResult("script", script, evt.full);
           state.generation = null;
-          scheduleSave();
+          persist();
           render();
         }
       } catch {}
@@ -1415,6 +2172,9 @@ async function genScript(script, runId) {
 function generationMeta(kind) {
   const data = {
     outline: { title: "AI 正在为您构思剧本大纲…", subtitle: "梳理起承转合、核心冲突与反转节奏，生成完整故事骨架" },
+    "outline-refine-apply": { title: "AI 正在根据讨论重新生成大纲…", subtitle: "结合打磨意见，输出完整优化版大纲方案" },
+    worldbuilding: { title: "AI 正在构建故事世界观…", subtitle: "设定时代背景、社会规则、地理势力与独特世界法则" },
+    "wb-refine-apply": { title: "AI 正在根据讨论重新生成世界观…", subtitle: "结合打磨意见，输出完整优化版世界观" },
     characters: { title: "AI 正在搭建角色关系…", subtitle: "提取主角欲望、反派压力与配角功能，让角色服务剧情推进" },
     episodes: { title: "AI 正在拆解分集规划…", subtitle: "为每集配置目标、冲突、转折和结尾钩子" },
     script: { title: "AI 正在生成本集正文…", subtitle: "按短剧格式逐字输出场景、动作、对白和转场" },
@@ -1426,18 +2186,70 @@ function generationMeta(kind) {
 function applyGeneratedResult(kind, script, data) {
   if (kind === "outline") {
     const plans = Array.isArray(data) ? data : (data.plans || []);
-    script.storyOutline.plans = plans.map((p, i) => ({
-      id: p.id || `plan-${uid()}`,
-      title: p.title || `方案${i + 1}`,
-      label: p.label || "AI生成",
-      content: p.content || "",
-      generatedAt: p.generatedAt || formatDate(new Date()),
-    }));
+    script.storyOutline.plans = plans.map((p, i) => {
+      let content = p.content || "";
+      if (!content) {
+        const parts = [];
+        if (p.style) parts.push(`【风格】${p.style}`);
+        if (p.core_highlights) parts.push(`【核心亮点】${p.core_highlights}`);
+        if (p.character_setting) parts.push(`【角色设定】${p.character_setting}`);
+        if (p.plot_outline) {
+          parts.push("【剧情大纲】");
+          if (typeof p.plot_outline === "string") {
+            parts.push(p.plot_outline);
+          } else if (typeof p.plot_outline === "object") {
+            Object.entries(p.plot_outline).forEach(([k, v]) => {
+              const label = k.replace(/_/g, " ").replace(/stage \d+ /i, "").trim();
+              parts.push(`${label}：${v}`);
+            });
+          }
+        }
+        content = parts.join("\n\n");
+      }
+      return {
+        id: p.id || `plan-${uid()}`,
+        title: p.title || `方案${i + 1}`,
+        label: p.label || "AI生成",
+        content,
+        generatedAt: p.generatedAt || formatDate(new Date()),
+      };
+    });
     script.storyOutline.selectedPlanIndex = 0;
     state.selectedOutlineIds = script.storyOutline.plans.slice(0, 2).map((p) => p.id);
     script.currentStep = 2;
     updateCompletion(script, 45);
     toast("故事大纲已生成。");
+  }
+  if (kind === "outline-refine-apply") {
+    const content = typeof data === "string" ? data : (data.content || "");
+    const newPlan = {
+      id: `plan-${uid()}`,
+      title: `精炼版 ${script.storyOutline.plans.length + 1}`,
+      label: "打磨精炼",
+      content,
+      generatedAt: formatDate(new Date()),
+    };
+    script.storyOutline.plans.push(newPlan);
+    script.storyOutline.selectedPlanIndex = script.storyOutline.plans.length - 1;
+    script.outlineConversation = [];
+    script._outlineRefineReady = false;
+    updateCompletion(script, 45);
+    toast("精炼版大纲已生成，已自动选中。");
+  }
+  if (kind === "worldbuilding") {
+    script.worldbuilding = typeof data === "string" ? data : (data.worldbuilding || data.content || "");
+    script._worldbuildingEditing = false;
+    script.currentStep = 3;
+    updateCompletion(script, 52);
+    toast("世界观已生成。");
+  }
+  if (kind === "wb-refine-apply") {
+    script.worldbuilding = typeof data === "string" ? data : (data.content || "");
+    script._worldbuildingEditing = false;
+    script._wbRefineReady = false;
+    script.wbConversation = [];
+    updateCompletion(script, 52);
+    toast("世界观已更新。");
   }
   if (kind === "characters") {
     const roleMap = { protagonist: "主角", antagonist: "反派", supporting: "配角" };
@@ -1455,8 +2267,8 @@ function applyGeneratedResult(kind, script, data) {
       background: "",
       _genPrompt: c.genPrompt || "",
     }));
-    script.currentStep = 3;
-    updateCompletion(script, 65);
+    script.currentStep = 4;
+    updateCompletion(script, 62);
     toast("角色体系已生成。");
   }
   if (kind === "episodes") {
@@ -1467,7 +2279,7 @@ function applyGeneratedResult(kind, script, data) {
       return makeEpisode(num, p.title || `第${num}集`, p.goal || "", p.conflict || "", p.hook || "");
     });
     state.selectedEpisodeId = script.episodes[0]?.id || "";
-    script.currentStep = 4;
+    script.currentStep = 5;
     updateCompletion(script, 80);
     toast("分集规划已生成。");
   }
@@ -1681,31 +2493,6 @@ function runValidation() {
   renderPortal();
 }
 
-function sendAssistantMessage(value) {
-  const script = activeScript();
-  script.aiConversation = script.aiConversation || [];
-  script.aiConversation.push({ id: uid(), role: "user", step: script.currentStep, content: value, appliedToContent: false });
-  script.aiConversation.push({
-    id: uid(),
-    role: "ai",
-    step: script.currentStep,
-    content: assistantReply(value, script.currentStep),
-    appliedToContent: false,
-  });
-  scheduleSave();
-  render();
-}
-
-function assistantReply(value, step) {
-  const prefix = {
-    1: "建议把题材、核心元素和情绪各控制在 2-4 个，避免定位过散。",
-    2: "可以保留当前大纲的强冲突开篇，同时把中段反转提前到第 3 集末尾。",
-    3: "角色关系建议增加“共同秘密”或“不可说的旧债”，这样后续分集更容易制造钩子。",
-    4: "分集节奏可以按“开局压迫、短胜利、再压迫、信息反转”的节拍推进。",
-    5: "这段正文可以增加动作线和环境压力，让对白不要单独承担戏剧张力。",
-  };
-  return `${prefix[step]}\n\n针对“${value}”，我会优先加强冲突、明确角色欲望，并把下一集钩子留在段落末尾。`;
-}
 
 function rewriteSelection(mode) {
   const script = activeScript();
@@ -1745,15 +2532,212 @@ function captureSelection() {
   renderPortal();
 }
 
-function quickPrompts(step) {
-  return {
-    1: ["推荐题材组合", "热门标签", "加强爽点"],
-    2: ["换个方向", "加强冲突", "改成开放式结局", "融合方案"],
-    3: ["增加反派", "调整角色关系", "让男主更腹黑"],
-    4: ["增加反转", "调整节奏", "加一集过渡"],
-    5: ["对白太平", "增加环境描写", "氛围更紧张"],
-  }[step] || [];
+
+// ── Server sync ───────────────────────────────────────────────────────────────
+
+function phaseToStep(phase) {
+  return { chat: 1, outline: 2, worldbuilding: 3, characters: 4, planning: 5, scripts: 6 }[phase] || 1;
 }
+
+function stepToPhase(step) {
+  return [, "chat", "outline", "worldbuilding", "characters", "planning", "scripts"][step] || "chat";
+}
+
+function serverSummaryToScript(row) {
+  const step = phaseToStep(row.phase);
+  const completion = { 1: 10, 2: 40, 3: 60, 4: 80, 5: 85 }[step] || 10;
+  return {
+    id: row.id,
+    name: row.title,
+    _serverLoaded: false,
+    status: "DRAFT",
+    completionRate: completion,
+    currentStep: step,
+    createdAt: row.created || "",
+    updatedAt: row.updated || "",
+    storyPositioning: {
+      workType: "短剧",
+      episodeCount: row.episodeCount || 10,
+      audience: [],
+      genres: [],
+      coreElements: [],
+      emotionalTone: [],
+    },
+    storyOutline: { selectedPlanIndex: 0, plans: [], versions: [] },
+    characters: [],
+    episodes: [],
+    aiConversation: [],
+  };
+}
+
+function serverProjectToScript(data) {
+  const step = phaseToStep(data.phase);
+  const roleMap = { protagonist: "主角", antagonist: "反派", supporting: "配角" };
+
+  const plans = Array.isArray(data.outlinePlans) && data.outlinePlans.length
+    ? data.outlinePlans.map((p, i) => ({
+        id: p.id || `plan-${uid()}`,
+        title: p.title || `方案${i + 1}`,
+        label: p.label || "AI生成",
+        content: p.content || "",
+        generatedAt: p.generatedAt || data.updated || "",
+      }))
+    : data.outline
+      ? [{ id: `plan-${uid()}`, title: "方案一", label: "AI生成", content: data.outline, generatedAt: data.updated || "" }]
+      : [];
+
+  const characters = (data.characters || []).map((c) => ({
+    id: c.id || `char-${uid()}`,
+    name: c.name || "未命名",
+    gender: "其他",
+    age: String(c.age || ""),
+    role: roleMap[c.role] || "配角",
+    personality: typeof c.personality === "string"
+      ? c.personality.split(/[、,，]/).map((s) => s.trim()).filter(Boolean)
+      : (Array.isArray(c.personality) ? c.personality : []),
+    biography: typeof c.personality === "string" ? c.personality : "",
+    appearance: c.appearance || "",
+    background: "",
+    imageUrl: c.imageUrl || "",
+    images: c.imageUrl ? [{ id: uid(), url: c.imageUrl }] : [],
+    _genPrompt: c.genPrompt || "",
+  }));
+
+  const episodePlans = data.episodePlans || {};
+  const episodesWritten = data.episodes || {};
+  const count = Math.max(1, data.episodeCount || 10);
+  const episodes = Array.from({ length: count }, (_, i) => {
+    const num = i + 1;
+    const plan = episodePlans[String(num)] || {};
+    const content = episodesWritten[String(num)] || "";
+    const ep = makeEpisode(num, plan.title || `第${num}集`, plan.goal || "", plan.conflict || "", plan.hook || "");
+    ep.scriptContent = content;
+    if (content) {
+      ep.versions = [{ id: `version-${uid()}`, versionNumber: 1, content, savedAt: data.updated || "", type: "AUTO" }];
+    }
+    return ep;
+  });
+
+  const done = episodes.filter((e) => e.scriptContent).length;
+  const completion = step === 6
+    ? Math.min(100, Math.round(85 + (done / count) * 15))
+    : ({ 1: 10, 2: 40, 3: 52, 4: 62, 5: 80 }[step] || 10);
+
+  return {
+    id: data.id,
+    name: data.title,
+    _serverLoaded: true,
+    status: "DRAFT",
+    completionRate: completion,
+    currentStep: step,
+    createdAt: data.created || "",
+    updatedAt: data.updated || "",
+    storyPositioning: {
+      workType: "短剧",
+      episodeCount: data.episodeCount || 10,
+      audience: [],
+      genres: [],
+      coreElements: [],
+      emotionalTone: [],
+    },
+    storyOutline: { selectedPlanIndex: 0, plans, versions: [] },
+    characters,
+    episodes,
+    aiConversation: (data.messages || []).map((m) => ({
+      id: m.id || uid(),
+      role: m.role === "assistant" ? "ai" : m.role,
+      step: m.step || step,
+      content: m.content || "",
+      appliedToContent: m.appliedToContent || false,
+    })),
+    worldbuilding: data.worldbuilding || "",
+    wbConversation: [],
+    outlineConversation: [],
+    _chatStarted: (data.messages || []).length > 0,
+    _chatReady: (data.messages || []).some((m) => m.role === "assistant" || m.role === "ai"),
+  };
+}
+
+function scriptToServerPayload(script) {
+  const roleMapReverse = { "主角": "protagonist", "女主": "protagonist", "反派": "antagonist", "配角": "supporting" };
+  return {
+    id: script.id,
+    title: script.name,
+    phase: stepToPhase(script.currentStep),
+    requirements: "",
+    worldbuilding: script.worldbuilding || "",
+    outlinePlans: script.storyOutline.plans.length ? script.storyOutline.plans : undefined,
+    outline: script.storyOutline.plans[script.storyOutline.selectedPlanIndex]?.content
+      || script.storyOutline.plans[0]?.content || "",
+    episodeCount: script.storyPositioning.episodeCount || 10,
+    messages: (script.aiConversation || []).map((m) => ({
+      id: m.id,
+      role: m.role === "ai" ? "assistant" : m.role,
+      content: m.content,
+      step: m.step,
+      appliedToContent: m.appliedToContent,
+    })),
+    episodes: Object.fromEntries(
+      (script.episodes || [])
+        .filter((e) => e.scriptContent)
+        .map((e) => [String(e.episodeNumber), e.scriptContent])
+    ),
+    characters: (script.characters || []).map((c) => ({
+      id: c.id,
+      name: c.name,
+      role: roleMapReverse[c.role] || "supporting",
+      personality: Array.isArray(c.personality) ? c.personality.join("、") : (c.personality || ""),
+      age: c.age || "",
+      appearance: c.appearance || "",
+      imageUrl: c.imageUrl || c.images?.[0]?.url || "",
+      genPrompt: c._genPrompt || "",
+    })),
+    episodePlans: Object.fromEntries(
+      (script.episodes || []).map((e) => [
+        String(e.episodeNumber),
+        { title: e.title, goal: e.goal, conflict: e.conflict, hook: e.hook },
+      ])
+    ),
+  };
+}
+
+async function loadProjectsFromServer() {
+  try {
+    const res = await fetch("/api/projects");
+    if (!res.ok) {
+      console.error(`[幕启] /api/projects 返回 ${res.status}`);
+      return null;
+    }
+    const rows = await res.json();
+    if (!Array.isArray(rows) || !rows.length) return null;
+    return rows.map(serverSummaryToScript);
+  } catch (err) {
+    console.error("[幕启] fetch /api/projects 异常", err);
+    return null;
+  }
+}
+
+async function syncToServer(script) {
+  if (!script || script.id === "script-demo") return;
+  try {
+    const res = await fetch("/api/project", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(scriptToServerPayload(script)),
+    });
+    if (!res.ok) return;
+    script._serverLoaded = true;
+  } catch {}
+}
+
+async function deleteFromServer(pid) {
+  if (!pid || pid === "script-demo") return;
+  try {
+    await fetch(`/api/project/${pid}`, { method: "DELETE" });
+  } catch {}
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 function filteredScripts() {
   const keyword = state.search.trim().toLowerCase();
@@ -1854,6 +2838,12 @@ function escapeHtml(value = "") {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
+}
+
+function renderMd(text = "") {
+  if (!text) return "";
+  if (typeof marked === "undefined") return escapeHtml(text);
+  return marked.parse(String(text), { breaks: true, gfm: true });
 }
 
 function escapeAttr(value = "") {

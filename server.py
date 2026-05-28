@@ -102,10 +102,85 @@ async def chat(req: Request):
     return sse_stream(system, body.get("messages", []), max_tokens=600)
 
 
+@app.post("/api/refine-outline")
+async def refine_outline(req: Request):
+    body = await req.json()
+    outline = body.get("outline", "")
+    system = (
+        "你是专业短剧策划编剧，正在帮助用户打磨故事大纲。\n"
+        f"【当前大纲】\n{outline}\n\n"
+        "根据用户的修改意见，给出具体的调整建议或直接提供修改后的大纲段落。"
+        "回答简洁有力，每次最多修改用户指定的部分。"
+        "如果用户对大纲满意，在回复末尾单独一行写：OUTLINE_READY"
+    )
+    return sse_stream(system, body.get("messages", []), max_tokens=800)
+
+
+@app.post("/api/apply-outline-refine")
+async def apply_outline_refine(req: Request):
+    body = await req.json()
+    outline = body.get("outline", "")
+    conversation = body.get("conversation", [])
+    conv_text = "\n".join(
+        f"{'用户' if m.get('role') == 'user' else 'AI'}：{m.get('content', '')}"
+        for m in conversation
+    )
+    system = (
+        "你是专业短剧策划编剧。根据原始大纲和用户与AI的打磨讨论，"
+        "生成一个完整优化后的新大纲版本。直接输出大纲正文，不需要前言和解释。"
+        "大纲内容完整，不少于300字，覆盖故事背景、人物、核心矛盾和主线发展。"
+    )
+    prompt = (
+        f"【原始大纲】\n{outline}\n\n"
+        f"【打磨讨论记录】\n{conv_text}\n\n"
+        "请根据以上讨论，生成一个完整的优化大纲："
+    )
+    return sse_stream(system, [{"role": "user", "content": prompt}], max_tokens=3000)
+
+
+@app.post("/api/refine-worldbuilding")
+async def refine_worldbuilding(req: Request):
+    body = await req.json()
+    wb = body.get("worldbuilding", "")
+    system = (
+        "你是专业短剧策划编剧，正在帮助用户打磨故事世界观设定。\n"
+        + (f"【当前世界观】\n{wb}\n\n" if wb else "用户尚未生成世界观，请根据他们的描述给出建议。\n\n")
+        + "根据用户的修改意见，给出具体调整建议或直接提供修改后的段落。"
+        "回答简洁有力，每次聚焦用户指定的部分。"
+        "如果用户对世界观满意，在回复末尾单独一行写：WB_READY"
+    )
+    return sse_stream(system, body.get("messages", []), max_tokens=1000)
+
+
+@app.post("/api/apply-worldbuilding-refine")
+async def apply_worldbuilding_refine(req: Request):
+    body = await req.json()
+    wb = body.get("worldbuilding", "")
+    conversation = body.get("conversation", [])
+    conv_text = "\n".join(
+        f"{'用户' if m.get('role') == 'user' else 'AI'}：{m.get('content', '')}"
+        for m in conversation
+    )
+    system = (
+        "你是专业短剧策划编剧。根据原始世界观和用户与AI的打磨讨论，"
+        "生成一个完整优化后的新世界观版本。直接输出世界观正文，不需要前言和解释。"
+        "内容完整，覆盖时代背景、社会规则、地理势力、核心冲突来源等要素。"
+    )
+    prompt = (
+        (f"【原始世界观】\n{wb}\n\n" if wb else "")
+        + f"【打磨讨论记录】\n{conv_text}\n\n"
+        + "请根据以上讨论，生成一个完整的优化世界观："
+    )
+    return sse_stream(system, [{"role": "user", "content": prompt}], max_tokens=3000)
+
+
 @app.post("/api/worldbuilding")
 async def worldbuilding(req: Request):
     body = await req.json()
-    prompt = WORLDBUILDING_PROMPT.format(requirements=body.get("requirements", ""))
+    outline = body.get("outline", "")
+    requirements = body.get("requirements", "")
+    ctx = requirements or outline
+    prompt = WORLDBUILDING_PROMPT.format(requirements=ctx) if ctx else "请生成一套完整的世界观设定。"
     return sse_stream(WORLDBUILDING_SYSTEM, [{"role": "user", "content": prompt}], max_tokens=3000)
 
 
@@ -157,13 +232,28 @@ async def refine(req: Request):
 # ── Project CRUD ──────────────────────────────────────────────────────────────
 
 def _row_to_proj(row: dict) -> dict:
+    raw_outline = row.get("outline") or ""
+    outline_plans = []
+    outline_text = raw_outline
+    if raw_outline.strip().startswith("["):
+        try:
+            parsed = json.loads(raw_outline)
+            if isinstance(parsed, list):
+                outline_plans = parsed
+                outline_text = parsed[0].get("content", "") if parsed else ""
+        except Exception:
+            pass
+    if not outline_plans and outline_text:
+        outline_plans = [{"id": "plan-1", "title": "方案一", "label": "AI生成",
+                          "content": outline_text, "generatedAt": row.get("updated", "")}]
     return {
         "id":           row["id"],
         "title":        row.get("title", "未命名"),
         "phase":        row.get("phase", "chat"),
         "requirements": row.get("requirements") or "",
         "worldbuilding":row.get("worldbuilding") or "",
-        "outline":      row.get("outline") or "",
+        "outline":      outline_text,
+        "outlinePlans": outline_plans,
         "episodeCount": row.get("episode_count", 15),
         "episodesDone": row.get("episodes_done", 0),
         "messages":     row.get("messages") or [],
@@ -192,7 +282,8 @@ def _save_proj(data: dict) -> str:
         "phase":         data.get("phase", "chat"),
         "requirements":  data.get("requirements", ""),
         "worldbuilding": data.get("worldbuilding", ""),
-        "outline":       data.get("outline", ""),
+        "outline":       (json.dumps(data["outlinePlans"], ensure_ascii=False)
+                          if data.get("outlinePlans") else data.get("outline", "")),
         "episode_count": data.get("episodeCount", 15),
         "episodes_done": episodes_done,
         "messages":      data.get("messages", []),
@@ -539,15 +630,24 @@ async def outline_plans_gen(req: Request):
     body = await req.json()
     pos  = body.get("storyPositioning", {})
     episode_count = body.get("episodeCount", 10)
-    prompt = _OUTLINE_PLANS_PROMPT.format(
-        name          = pos.get("name", "未命名"),
-        work_type     = pos.get("workType", "短剧"),
-        episode_count = episode_count,
-        audience      = "、".join(pos.get("audience", [])) or "不限",
-        genres        = "、".join(pos.get("genres", [])) or "不限",
-        core_elements = "、".join(pos.get("coreElements", [])) or "不限",
-        emotional_tone= "、".join(pos.get("emotionalTone", [])) or "不限",
-    )
+    requirements  = body.get("requirements", "")
+    if requirements:
+        prompt = (
+            f"请根据以下用户与AI的需求对话，生成3个风格各异的故事大纲方案，预计集数 {episode_count} 集。\n\n"
+            f"【需求对话记录】\n{requirements}\n\n"
+            f"输出格式（严格JSON数组，无其他内容）：\n"
+            f'[{{"title":"方案一","label":"风格A","content":"完整大纲内容不少于300字..."}},{{"title":"方案二","label":"风格B","content":"..."}},{{"title":"方案三","label":"风格C","content":"..."}}]'
+        )
+    else:
+        prompt = _OUTLINE_PLANS_PROMPT.format(
+            name          = pos.get("name", "未命名"),
+            work_type     = pos.get("workType", "短剧"),
+            episode_count = episode_count,
+            audience      = "、".join(pos.get("audience", [])) or "不限",
+            genres        = "、".join(pos.get("genres", [])) or "不限",
+            core_elements = "、".join(pos.get("coreElements", [])) or "不限",
+            emotional_tone= "、".join(pos.get("emotionalTone", [])) or "不限",
+        )
     resp = client.chat.completions.create(
         model=MODEL, max_tokens=4000, stream=False,
         messages=[
