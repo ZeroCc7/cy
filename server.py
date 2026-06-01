@@ -28,6 +28,8 @@ from prompts import (
     CHARACTER_EXTRACT_SYSTEM, CHARACTER_EXTRACT_PROMPT,
     REFINE_CHAR_BG_SYSTEM, APPLY_CHAR_BG_SYSTEM, APPLY_CHAR_BG_PROMPT,
     EPISODE_PLAN_SYSTEM, EPISODE_PLAN_PROMPT, SINGLE_EPISODE_PLAN_PROMPT,
+    REFINE_EP_SYSTEM, APPLY_EP_SYSTEM, APPLY_EP_PROMPT,
+    REFINE_SCRIPT_SYSTEM, APPLY_SCRIPT_SYSTEM, APPLY_SCRIPT_PROMPT,
 )
 
 load_dotenv()
@@ -650,6 +652,73 @@ async def apply_character_background_refine(req: Request):
     conv_text = "\n".join(f"{'用户' if m['role']=='user' else 'AI'}：{m['content']}" for m in messages)
     prompt    = APPLY_CHAR_BG_PROMPT.format(char_name=char_name, bg_original=bg or "（暂无）", conv_text=conv_text)
     return sse_stream(APPLY_CHAR_BG_SYSTEM, [{"role": "user", "content": prompt}], max_tokens=600)
+
+
+@app.post("/api/refine-episode")
+async def refine_episode(req: Request):
+    body       = await req.json()
+    ep_num     = body.get("epNum", 1)
+    messages   = body.get("messages", [])
+    system     = REFINE_EP_SYSTEM.format(
+        ep_num=ep_num,
+        ep_title=body.get("title", ""),
+        ep_goal=body.get("goal", ""),
+        ep_conflict=body.get("conflict", ""),
+        ep_hook=body.get("hook", ""),
+    )
+    return sse_stream(system, messages, max_tokens=800)
+
+
+@app.post("/api/refine-script")
+async def refine_script(req: Request):
+    body          = await req.json()
+    ep_num        = body.get("epNum", 1)
+    script_text   = body.get("scriptContent", "")
+    preview       = script_text[:800] + ("…" if len(script_text) > 800 else "")
+    messages      = body.get("messages", [])
+    system        = REFINE_SCRIPT_SYSTEM.format(
+        ep_num=ep_num,
+        ep_goal=body.get("goal", ""),
+        ep_conflict=body.get("conflict", ""),
+        ep_hook=body.get("hook", ""),
+        script_preview=preview or "（暂无正文）",
+    )
+    return sse_stream(system, messages, max_tokens=1000)
+
+
+@app.post("/api/apply-script-refine")
+async def apply_script_refine(req: Request):
+    body         = await req.json()
+    ep_num       = body.get("epNum", 1)
+    script_text  = body.get("scriptContent", "")
+    messages     = body.get("messages", [])
+    conv_text    = "\n".join(f"{'用户' if m['role']=='user' else 'AI'}：{m['content']}" for m in messages)
+    prompt       = APPLY_SCRIPT_PROMPT.format(
+        ep_num=ep_num,
+        ep_goal=body.get("goal", ""),
+        ep_conflict=body.get("conflict", ""),
+        ep_hook=body.get("hook", ""),
+        script_content=script_text or "（暂无正文）",
+        conv_text=conv_text,
+    )
+    return sse_stream(APPLY_SCRIPT_SYSTEM, [{"role": "user", "content": prompt}], max_tokens=4000)
+
+
+@app.post("/api/apply-episode-refine")
+async def apply_episode_refine(req: Request):
+    body       = await req.json()
+    ep_num     = body.get("epNum", 1)
+    messages   = body.get("messages", [])
+    conv_text  = "\n".join(f"{'用户' if m['role']=='user' else 'AI'}：{m['content']}" for m in messages)
+    prompt     = APPLY_EP_PROMPT.format(
+        ep_num=ep_num,
+        ep_title=body.get("title", ""),
+        ep_goal=body.get("goal", ""),
+        ep_conflict=body.get("conflict", ""),
+        ep_hook=body.get("hook", ""),
+        conv_text=conv_text,
+    )
+    return sse_stream(APPLY_EP_SYSTEM, [{"role": "user", "content": prompt}], max_tokens=500)
 
 
 @app.post("/api/episode-plans")

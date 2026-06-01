@@ -6,11 +6,10 @@ if (typeof marked !== "undefined") {
 
 const steps = [
   { id: 1, title: "作品需求", sub: "与 AI 对话确认", progress: 15 },
-  { id: 2, title: "故事大纲", sub: "多方案 / 精炼", progress: 30 },
+  { id: 2, title: "故事大纲", sub: "多方案 / 精炼",  progress: 30 },
   { id: 3, title: "世界观",   sub: "AI 生成 / 编辑", progress: 45 },
-  { id: 4, title: "角色设定", sub: "人物小传",       progress: 62 },
-  { id: 5, title: "分集规划", sub: "冲突与钩子",     progress: 80 },
-  { id: 6, title: "正文创作", sub: "逐集生成",       progress: 90 },
+  { id: 4, title: "角色设定", sub: "人物小传",        progress: 62 },
+  { id: 5, title: "逐集创作", sub: "规划 · 写稿",    progress: 90 },
 ];
 
 const tagOptions = {
@@ -129,6 +128,7 @@ function normalizeState(raw) {
     sidebarCollapsed: false,
     showOutlineRegen: false,
     outlineRegenContext: "",
+    episodeTab: "plan",
   };
   if (!next.scripts.find((script) => script.id === next.activeScriptId)) {
     next.activeScriptId = next.scripts[0]?.id;
@@ -140,6 +140,13 @@ function normalizeState(raw) {
       if (!c.bgConversation) c.bgConversation = [];
       if (c._bgRefineReady === undefined) c._bgRefineReady = false;
     });
+    (s.episodes || []).forEach((e) => {
+      if (!e.epConversation) e.epConversation = [];
+      if (e._epRefineReady === undefined) e._epRefineReady = false;
+      if (!e.scriptConversation) e.scriptConversation = [];
+      if (e._scriptRefineReady === undefined) e._scriptRefineReady = false;
+    });
+    if (s.currentStep > 5) s.currentStep = 5;
     let max = 1;
     if (s.storyOutline?.plans?.length > 0) max = Math.max(max, 2);
     if (s.worldbuilding) max = Math.max(max, 3);
@@ -323,6 +330,10 @@ function makeEpisode(num, title, goal, conflict, hook) {
     versions: [],
     alternateVersions: [],
     needsUpdate: false,
+    epConversation: [],
+    _epRefineReady: false,
+    scriptConversation: [],
+    _scriptRefineReady: false,
   };
 }
 
@@ -540,8 +551,7 @@ function renderCurrentStep(script) {
   if (script.currentStep === 2) return renderStepTwo(script);
   if (script.currentStep === 3) return renderStepThree(script);
   if (script.currentStep === 4) return renderStepFour(script);
-  if (script.currentStep === 5) return renderStepFive(script);
-  return renderStepSix(script);
+  return renderStepFive(script);
 }
 
 function renderStepHead(step, title, subtitle, actionHtml = "") {
@@ -1131,58 +1141,151 @@ function renderCharEditModal(char) {
 }
 
 function renderStepFive(script) {
-  const isGenerating = state.generation?.active && state.generation.kind === "episodes";
-  if (isGenerating) {
-    return `
-      ${renderStepHead(5, "拆解分集规划", "AI 正在为每集生成目标、冲突和结尾钩子。", `<button class="ghost-button" type="button" data-action="stop-generation">停止生成</button>`)}
-      <section class="panel panel-pad">${renderStreamState()}</section>
-    `;
-  }
   ensureEpisodeSelection(script);
   const episode = selectedEpisode(script);
+  const planDone   = script.episodes.filter((e) => e.goal || e.conflict || e.hook).length;
+  const scriptDone = script.episodes.filter((e) => e.scriptContent).length;
+  const total = script.episodes.length;
+
   return `
-    ${renderStepHead(5, "拆解分集规划", "每集都要有目标、冲突和结尾钩子。", `<button class="primary-button" type="button" data-action="enter-writing">进入正文创作</button>`)}
-    <section class="panel panel-pad">
-      ${!script.episodes.length ? `
-        <div class="empty-state">
-          <div>
-            <h3>分集规划尚未生成</h3>
-            <p>确认角色后可自动拆解，也可以直接在这里生成分集规划。</p>
-            <button class="primary-button" type="button" data-action="generate-episodes">生成分集规划</button>
-          </div>
-        </div>
-      ` : `
-        <div class="planning-layout">
-          <div class="episode-list">${script.episodes.map((ep) => renderEpisodeCard(ep)).join("")}</div>
-          <div class="detail-form">
-            <div class="panel-head">
-              <h3>第 ${episode.episodeNumber} 集详情</h3>
-              <button class="ghost-button violet" type="button" data-action="regenerate-episode">↻ 重新生成</button>
-            </div>
-            <label class="field-title">标题</label>
-            <input data-episode-field="title" value="${escapeAttr(episode.title)}" />
-            <label class="field-title">本集目标</label>
-            <textarea data-episode-field="goal">${escapeHtml(episode.goal)}</textarea>
-            <label class="field-title">主要冲突</label>
-            <textarea data-episode-field="conflict">${escapeHtml(episode.conflict)}</textarea>
-            <label class="field-title">结尾钩子</label>
-            <textarea data-episode-field="hook">${escapeHtml(episode.hook)}</textarea>
-          </div>
-        </div>
-      `}
-    </section>
-  `;
+    ${renderStepHead(5, "逐集创作", `${total} 集 · 已规划 ${planDone} · 已写稿 ${scriptDone}`)}
+    <div class="planning-layout">
+      <div class="episode-list panel panel-pad">
+        ${script.episodes.map((ep) => renderEpisodeCard(ep)).join("")}
+      </div>
+      <div class="ep-right">
+        ${episode
+          ? renderEpisodeWorkspace(episode, script)
+          : `<div class="panel panel-pad empty-state"><div><p class="muted">从左侧选择一集开始创作</p></div></div>`}
+      </div>
+    </div>`;
 }
 
 function renderEpisodeCard(ep) {
+  const isSelected  = state.selectedEpisodeId === ep.id;
+  const isGenPlan   = state.generation?.active && state.generation.kind === `gen-ep-${ep.id}`;
+  const isGenScript = state.generation?.active && state.generation.kind === "script" && isSelected;
+  const hasPlan     = ep.goal || ep.conflict || ep.hook;
+  const hasScript   = !!ep.scriptContent;
   return `
-    <button class="episode-card ${state.selectedEpisodeId === ep.id ? "active" : ""}" type="button" data-action="select-episode" data-id="${ep.id}">
-      <strong>第${ep.episodeNumber}集 ${escapeHtml(ep.title)}</strong>
-      <p>${escapeHtml(ep.goal || "等待规划")}</p>
-      ${ep.scriptContent ? `<span class="mini-chip">已生成</span>` : ""}
-      ${ep.needsUpdate ? `<span class="mini-chip" style="background:#ffb648">待更新</span>` : ""}
-    </button>
-  `;
+    <div class="episode-card ${isSelected ? "active" : ""}" data-action="select-episode" data-id="${ep.id}">
+      <div class="ep-card-head">
+        <span class="ep-num">第 ${ep.episodeNumber} 集</span>
+        <span class="ep-status-dots">
+          <span class="ep-dot ${hasPlan ? "on" : ""}" title="规划">规</span>
+          <span class="ep-dot ${hasScript ? "on" : ""}" title="正文">稿</span>
+        </span>
+      </div>
+      <p class="ep-card-title">${escapeHtml(hasPlan ? ep.title : "未规划")}</p>
+      <div class="ep-card-actions">
+        ${isGenPlan || isGenScript
+          ? `<span class="muted" style="font-size:11px">生成中…</span>`
+          : hasPlan
+            ? `<button class="ghost-button" type="button" data-action="gen-single-episode" data-ep-id="${ep.id}">↻ 规划</button>`
+            : `<button class="ghost-button cyan" type="button" data-action="gen-single-episode" data-ep-id="${ep.id}">✦ 生成规划</button>`}
+      </div>
+    </div>`;
+}
+
+function renderEpisodeWorkspace(ep, script) {
+  const tab  = state.episodeTab || "plan";
+  const busy = state.generation?.active;
+  return `
+    <div class="ep-workspace">
+      <div class="ep-tab-bar">
+        <button class="ep-tab ${tab === "plan" ? "active" : ""}" type="button" data-action="switch-ep-tab" data-tab="plan">📋 分集规划</button>
+        <button class="ep-tab ${tab === "script" ? "active" : ""}" type="button" data-action="switch-ep-tab" data-tab="script">✍ 正文创作</button>
+        <span class="ep-tab-title muted">第 ${ep.episodeNumber} 集 · ${escapeHtml(ep.title || "未命名")}</span>
+      </div>
+      <div class="ep-tab-content">
+        ${tab === "plan" ? renderEpPlanTab(ep, script, busy) : renderEpScriptTab(ep, script, busy)}
+      </div>
+    </div>`;
+}
+
+function renderEpPlanTab(ep, script, busy) {
+  const isGenPlan = state.generation?.active && state.generation.kind === `gen-ep-${ep.id}`;
+  const isApplying = state.generation?.active && state.generation.kind === `ep-refine-apply-${ep.id}`;
+  const detailPanel = `
+    <section class="panel panel-pad ep-detail-panel">
+      <div class="panel-head">
+        <h3>规划内容</h3>
+        <button class="ghost-button violet" type="button" data-action="gen-single-episode" data-ep-id="${ep.id}"${busy ? " disabled" : ""}>↻ 重新生成</button>
+      </div>
+      ${isGenPlan ? renderStreamState() : `
+        <label class="field-title">标题</label>
+        <input data-episode-field="title" value="${escapeAttr(ep.title)}" />
+        <label class="field-title">本集目标</label>
+        <textarea data-episode-field="goal">${escapeHtml(ep.goal)}</textarea>
+        <label class="field-title">主要冲突</label>
+        <textarea data-episode-field="conflict">${escapeHtml(ep.conflict)}</textarea>
+        <label class="field-title">结尾钩子</label>
+        <textarea data-episode-field="hook">${escapeHtml(ep.hook)}</textarea>
+      `}
+    </section>`;
+  const msgs = ep.epConversation || [];
+  const canApply = msgs.length > 0 && !busy;
+  const msgsHtml = msgs.map((m) => `
+    <div class="chat-bubble ${m.role === "user" ? "user" : "ai"}">
+      <div class="chat-avatar">${m.role === "user" ? "我" : "AI"}</div>
+      <div class="chat-text md-content">${m.role === "user" ? escapeHtml(m.content) : renderMd(m.content)}</div>
+    </div>`).join("");
+  const chatPanel = `
+    <div class="panel panel-pad wb-chat-inner">
+      <div class="panel-head"><h3>AI 打磨规划</h3></div>
+      ${msgs.length ? `<div class="wb-msgs" id="ep-msgs-${ep.id}">${msgsHtml}</div>` : `<div class="wb-msgs-empty"><p class="muted">描述对本集规划的修改想法</p></div>`}
+      ${canApply ? `<button class="refine-apply-btn ${ep._epRefineReady ? "ready-glow" : ""}" type="button" data-action="apply-ep-refine" data-ep-id="${ep.id}">✳ 确认，重新规划</button>` : ""}
+      <div class="chat-input-row">
+        <textarea class="chat-input" placeholder="说说你的想法…" data-ui="ep-chat-input" data-ep-id="${ep.id}"${busy ? " disabled" : ""}></textarea>
+        <button class="chat-send-btn" type="button" data-action="send-ep-chat" data-ep-id="${ep.id}"${busy ? " disabled" : ""}>↑</button>
+      </div>
+    </div>`;
+  return `<div class="wb-layout ep-plan-layout">${detailPanel}<div class="wb-chat-panel">${chatPanel}</div></div>`;
+}
+
+function renderEpScriptTab(ep, script, busy) {
+  const isGenScript  = state.generation?.active && state.generation.kind === "script";
+  const isApplying   = state.generation?.active && state.generation.kind === `script-refine-apply-${ep.id}`;
+  const editorText   = isGenScript ? state.generation.text : ep.scriptContent;
+  const wordCount    = (ep.scriptContent || "").replace(/\s/g, "").length;
+
+  const scMsgs    = ep.scriptConversation || [];
+  const canApply  = scMsgs.length > 0 && !busy;
+  const scMsgsHtml = scMsgs.map((m) => `
+    <div class="chat-bubble ${m.role === "user" ? "user" : "ai"}">
+      <div class="chat-avatar">${m.role === "user" ? "我" : "AI"}</div>
+      <div class="chat-text md-content">${m.role === "user" ? escapeHtml(m.content) : renderMd(m.content)}</div>
+    </div>`).join("");
+
+  return `
+    <div class="ep-script-layout">
+      <div class="ep-script-main">
+        <div class="ep-script-toolbar">
+          <div class="ep-script-meta muted">
+            <span>${escapeHtml(ep.title)}</span>
+            ${wordCount ? `<span>${wordCount} 字</span>` : ""}
+          </div>
+          <div class="chip-line">
+            <button class="primary-button" type="button" data-action="generate-episode-script"${busy ? " disabled" : ""}>${ep.scriptContent ? "↻ 重新生成" : "✳ 生成正文"}</button>
+            ${ep.scriptContent ? `<button class="ghost-button" type="button" data-action="save-version">▤ 版本</button>` : ""}
+            ${isGenScript ? `<button class="ghost-button" type="button" data-action="stop-generation">停止</button>` : ""}
+          </div>
+        </div>
+        <div class="editable script-editor" contenteditable="${busy ? "false" : "true"}" data-script-editor data-placeholder="生成正文后显示在此处，可直接编辑。">${editorText ? formatScriptHtml(editorText) : ""}</div>
+        ${isGenScript ? `<div class="progress-line"><span style="width:${state.generation.progress}%"></span></div>` : ""}
+      </div>
+      <div class="ep-script-chat wb-chat-panel">
+        <div class="panel panel-pad wb-chat-inner">
+          <div class="panel-head"><h3>AI 修改正文</h3></div>
+          ${scMsgs.length ? `<div class="wb-msgs" id="script-msgs-${ep.id}">${scMsgsHtml}</div>` : `<div class="wb-msgs-empty"><p class="muted">描述修改意见，AI 会给出建议并可重新生成正文。</p></div>`}
+          ${canApply ? `<button class="refine-apply-btn ${ep._scriptRefineReady ? "ready-glow" : ""}" type="button" data-action="apply-script-refine" data-ep-id="${ep.id}">✳ 确认，重新生成正文</button>` : ""}
+          <div class="chat-input-row">
+            <textarea class="chat-input" placeholder="说说修改意见…" data-ui="script-chat-input" data-ep-id="${ep.id}"${busy ? " disabled" : ""}></textarea>
+            <button class="chat-send-btn" type="button" data-action="send-script-chat" data-ep-id="${ep.id}"${busy ? " disabled" : ""}>↑</button>
+          </div>
+        </div>
+      </div>
+    </div>`;
 }
 
 function renderStepSix(script) {
@@ -1838,8 +1941,68 @@ function onClick(event) {
     render();
   }
 
+  if (action === "gen-single-episode" && script) {
+    if (state.generation?.active) return;
+    const ep = script.episodes.find((e) => e.id === button.dataset.epId);
+    if (!ep) return;
+    generationRun += 1;
+    const runId = generationRun;
+    state.generation = { active: true, kind: `gen-ep-${ep.id}`, text: "", progress: 10 };
+    render();
+    genSingleEpisode(script, ep, runId).catch((err) => {
+      console.error("gen-ep error:", err);
+      toast("生成失败，请重试。");
+      state.generation = null;
+      render();
+    });
+  }
+
+  if (action === "send-ep-chat" && script) {
+    if (state.generation?.active) return;
+    const ep = script.episodes.find((e) => e.id === button.dataset.epId);
+    if (!ep) return;
+    const textarea = document.querySelector(`[data-ui="ep-chat-input"][data-ep-id="${ep.id}"]`);
+    const text = textarea?.value.trim();
+    if (!text) return;
+    ep.epConversation = ep.epConversation || [];
+    ep.epConversation.push({ id: uid(), role: "user", content: text });
+    generationRun += 1;
+    const runId = generationRun;
+    state.generation = { active: true, kind: `ep-chat-${ep.id}`, text: "" };
+    if (textarea) textarea.value = "";
+    persist();
+    render();
+    genEpChat(script, ep, runId).catch((err) => {
+      console.error("ep-chat error:", err);
+      toast("对话失败，请重试。");
+      state.generation = null;
+      render();
+    });
+  }
+
+  if (action === "apply-ep-refine" && script) {
+    if (state.generation?.active) return;
+    const ep = script.episodes.find((e) => e.id === button.dataset.epId);
+    if (!ep) return;
+    generationRun += 1;
+    const runId = generationRun;
+    state.generation = { active: true, kind: `ep-refine-apply-${ep.id}`, text: "" };
+    render();
+    genEpRefineApply(script, ep, runId).catch((err) => {
+      console.error("ep-refine-apply error:", err);
+      toast("生成失败，请重试。");
+      state.generation = null;
+      render();
+    });
+  }
+
   if (action === "confirm-characters" || action === "generate-episodes") {
-    runGeneration("episodes");
+    if (script) {
+      script.currentStep = 5;
+      script.maxStep = Math.max(script.maxStep || 1, 5);
+    }
+    state.episodeTab = "plan";
+    render();
   }
 
   if (action === "select-episode") {
@@ -1860,11 +2023,55 @@ function onClick(event) {
     }
   }
 
+  if (action === "switch-ep-tab") {
+    state.episodeTab = button.dataset.tab;
+    render();
+  }
+
+  if (action === "send-script-chat" && script) {
+    if (state.generation?.active) return;
+    const ep = script.episodes.find((e) => e.id === button.dataset.epId);
+    if (!ep) return;
+    const textarea = document.querySelector(`[data-ui="script-chat-input"][data-ep-id="${ep.id}"]`);
+    const text = textarea?.value.trim();
+    if (!text) return;
+    ep.scriptConversation = ep.scriptConversation || [];
+    ep.scriptConversation.push({ id: uid(), role: "user", content: text });
+    generationRun += 1;
+    const runId = generationRun;
+    state.generation = { active: true, kind: `script-chat-${ep.id}`, text: "" };
+    if (textarea) textarea.value = "";
+    persist();
+    render();
+    genScriptChat(script, ep, runId).catch((err) => {
+      console.error("script-chat error:", err);
+      toast("对话失败，请重试。");
+      state.generation = null;
+      render();
+    });
+  }
+
+  if (action === "apply-script-refine" && script) {
+    if (state.generation?.active) return;
+    const ep = script.episodes.find((e) => e.id === button.dataset.epId);
+    if (!ep) return;
+    generationRun += 1;
+    const runId = generationRun;
+    state.generation = { active: true, kind: `script-refine-apply-${ep.id}`, text: "", progress: 5, title: "AI 正在修改正文…", subtitle: "结合讨论意见重新生成本集正文" };
+    render();
+    genScriptRefineApply(script, ep, runId).catch((err) => {
+      console.error("script-refine-apply error:", err);
+      toast("生成失败，请重试。");
+      state.generation = null;
+      render();
+    });
+  }
+
   if (action === "enter-writing" && script) {
-    script.currentStep = 6;
-    script.maxStep = Math.max(script.maxStep || 1, 6);
-    updateCompletion(script, 85);
+    script.currentStep = 5;
+    script.maxStep = Math.max(script.maxStep || 1, 5);
     ensureEpisodeSelection(script);
+    state.episodeTab = "script";
     scheduleSave();
     render();
   }
@@ -2566,6 +2773,166 @@ async function genEpisodes(script, runId) {
   render();
 }
 
+async function genSingleEpisode(script, ep, runId) {
+  const plan = selectedPlan(script);
+  const outlineText = plan?.content || "";
+  const res = await fetch(`/api/project/${script.id}/generate-episode-plan/${ep.episodeNumber}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ outline: outlineText }),
+  });
+  if (!res.ok) throw new Error(`gen-ep: ${res.status}`);
+  const data = await res.json();
+  if (runId !== generationRun) return;
+  if (data.title)    ep.title    = data.title;
+  if (data.goal)     ep.goal     = data.goal;
+  if (data.conflict) ep.conflict = data.conflict;
+  if (data.hook)     ep.hook     = data.hook;
+  ep.needsUpdate = !!ep.scriptContent;
+  script.maxStep = Math.max(script.maxStep || 1, 5);
+  state.generation = null;
+  persist();
+  render();
+}
+
+async function genEpChat(script, ep, runId) {
+  const messages = (ep.epConversation || []).map((m) => ({ role: m.role === "ai" ? "assistant" : "user", content: m.content }));
+  const res = await fetch("/api/refine-episode", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ epNum: ep.episodeNumber, title: ep.title, goal: ep.goal, conflict: ep.conflict, hook: ep.hook, messages }),
+  });
+  if (!res.ok) throw new Error(`ep-chat: ${res.status}`);
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  const aiMsg = { id: uid(), role: "ai", content: "" };
+  ep.epConversation.push(aiMsg);
+  let buf = "";
+  while (true) {
+    if (runId !== generationRun) { reader.cancel(); return; }
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true });
+    const lines = buf.split("\n"); buf = lines.pop();
+    for (const line of lines) {
+      if (!line.startsWith("data:")) continue;
+      try {
+        const evt = JSON.parse(line.slice(5).trim());
+        if (evt.type === "chunk") { aiMsg.content += evt.text; render(); }
+      } catch {}
+    }
+  }
+  if (/EP_READY/.test(aiMsg.content)) {
+    aiMsg.content = aiMsg.content.replace(/EP_READY\s*$/, "").trimEnd();
+    ep._epRefineReady = true;
+  }
+  state.generation = null;
+  persist();
+  render();
+}
+
+async function genEpRefineApply(script, ep, runId) {
+  const messages = (ep.epConversation || []).map((m) => ({ role: m.role === "ai" ? "assistant" : "user", content: m.content }));
+  const res = await fetch("/api/apply-episode-refine", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ epNum: ep.episodeNumber, title: ep.title, goal: ep.goal, conflict: ep.conflict, hook: ep.hook, messages }),
+  });
+  if (!res.ok) throw new Error(`ep-refine-apply: ${res.status}`);
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let result = ""; let buf = "";
+  while (true) {
+    if (runId !== generationRun) { reader.cancel(); return; }
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true });
+    const lines = buf.split("\n"); buf = lines.pop();
+    for (const line of lines) {
+      if (!line.startsWith("data:")) continue;
+      try { const evt = JSON.parse(line.slice(5).trim()); if (evt.type === "chunk") result += evt.text; } catch {}
+    }
+  }
+  try {
+    const data = JSON.parse(result.trim());
+    if (data.title)    ep.title    = data.title;
+    if (data.goal)     ep.goal     = data.goal;
+    if (data.conflict) ep.conflict = data.conflict;
+    if (data.hook)     ep.hook     = data.hook;
+  } catch {}
+  ep.epConversation = [];
+  ep._epRefineReady = false;
+  ep.needsUpdate = !!ep.scriptContent;
+  state.generation = null;
+  persist();
+  render();
+  toast(`第 ${ep.episodeNumber} 集规划已更新。`);
+}
+
+async function genScriptChat(script, ep, runId) {
+  const messages = (ep.scriptConversation || []).map((m) => ({ role: m.role === "ai" ? "assistant" : "user", content: m.content }));
+  const res = await fetch("/api/refine-script", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ epNum: ep.episodeNumber, goal: ep.goal, conflict: ep.conflict, hook: ep.hook, scriptContent: ep.scriptContent || "", messages }),
+  });
+  if (!res.ok) throw new Error(`script-chat: ${res.status}`);
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  const aiMsg = { id: uid(), role: "ai", content: "" };
+  ep.scriptConversation.push(aiMsg);
+  let buf = "";
+  while (true) {
+    if (runId !== generationRun) { reader.cancel(); return; }
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true });
+    const lines = buf.split("\n"); buf = lines.pop();
+    for (const line of lines) {
+      if (!line.startsWith("data:")) continue;
+      try { const evt = JSON.parse(line.slice(5).trim()); if (evt.type === "chunk") { aiMsg.content += evt.text; render(); } } catch {}
+    }
+  }
+  if (/SCRIPT_READY/.test(aiMsg.content)) {
+    aiMsg.content = aiMsg.content.replace(/SCRIPT_READY\s*$/, "").trimEnd();
+    ep._scriptRefineReady = true;
+  }
+  state.generation = null;
+  persist();
+  render();
+}
+
+async function genScriptRefineApply(script, ep, runId) {
+  const messages = (ep.scriptConversation || []).map((m) => ({ role: m.role === "ai" ? "assistant" : "user", content: m.content }));
+  const res = await fetch("/api/apply-script-refine", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ epNum: ep.episodeNumber, goal: ep.goal, conflict: ep.conflict, hook: ep.hook, scriptContent: ep.scriptContent || "", messages }),
+  });
+  if (!res.ok) throw new Error(`script-refine-apply: ${res.status}`);
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let result = ""; let buf = "";
+  while (true) {
+    if (runId !== generationRun) { reader.cancel(); return; }
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true });
+    const lines = buf.split("\n"); buf = lines.pop();
+    for (const line of lines) {
+      if (!line.startsWith("data:")) continue;
+      try { const evt = JSON.parse(line.slice(5).trim()); if (evt.type === "chunk") { result += evt.text; state.generation.text = result; state.generation.progress = Math.min(95, (state.generation.progress || 5) + 0.5); render(); } } catch {}
+    }
+  }
+  ep.scriptConversation = [];
+  ep._scriptRefineReady = false;
+  applyGeneratedResult("script", script, result);
+  state.generation = null;
+  persist();
+  render();
+  toast(`第 ${ep.episodeNumber} 集正文已更新。`);
+}
+
 async function genScript(script, runId) {
   const episode = selectedEpisode(script);
   if (!episode) return;
@@ -2998,11 +3365,11 @@ function captureSelection() {
 // ── Server sync ───────────────────────────────────────────────────────────────
 
 function phaseToStep(phase) {
-  return { chat: 1, outline: 2, worldbuilding: 3, characters: 4, planning: 5, scripts: 6 }[phase] || 1;
+  return { chat: 1, outline: 2, worldbuilding: 3, characters: 4, planning: 5, scripts: 5 }[phase] || 1;
 }
 
 function stepToPhase(step) {
-  return [, "chat", "outline", "worldbuilding", "characters", "planning", "scripts"][step] || "chat";
+  return [, "chat", "outline", "worldbuilding", "characters", "scripts"][step] || "chat";
 }
 
 function serverSummaryToScript(row) {

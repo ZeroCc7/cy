@@ -20,6 +20,10 @@
   --shadow: 0 24px 70px rgba(0, 0, 0, 0.48);
   --radius: 8px;
   --nav-h: 48px;
+  --workbar-h: 56px;
+  --step-head-h: 64px;
+  /* 可用内容高度 = 100vh - nav - workbar - stage-padding - step-head - bottom-pad */
+  --content-h: calc(100vh - var(--nav-h) - var(--workbar-h) - var(--step-head-h) - 52px);
   font-family: "LXGW WenKai Screen", "Source Han Serif SC", "Microsoft YaHei UI", "Noto Sans CJK SC", sans-serif;
   color-scheme: dark;
 }
@@ -28,11 +32,15 @@
   box-sizing: border-box;
 }
 
-body {
+html, body {
   margin: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
   font-size: 13px;
   min-width: 1180px;
-  overflow: hidden;
   background:
     radial-gradient(circle at 26% 12%, rgba(139, 174, 141, 0.12), transparent 30%),
     radial-gradient(circle at 86% 90%, rgba(200, 155, 82, 0.09), transparent 28%),
@@ -83,19 +91,26 @@ textarea {
   line-height: 1.72;
 }
 
+#app {
+  height: 100%;
+}
+
 .app {
-  min-height: 100vh;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 .top-nav {
+  flex-shrink: 0;
   height: var(--nav-h);
   background: rgba(27, 27, 28, 0.92);
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   display: flex;
   align-items: center;
   justify-content: center;
-  position: sticky;
-  top: 0;
+  position: relative;
   z-index: 30;
   backdrop-filter: blur(14px);
 }
@@ -490,6 +505,7 @@ h3 {
 }
 
 .workbar {
+  flex-shrink: 0;
   height: 56px;
   display: flex;
   align-items: center;
@@ -548,24 +564,29 @@ h3 {
 }
 
 .workspace {
-  display: grid;
-  grid-template-columns: 220px minmax(0, 1fr);
-  height: calc(100vh - var(--nav-h) - 56px);
+  display: flex;
+  flex: 1;
+  min-height: 0;
   overflow: hidden;
-  transition: grid-template-columns 0.22s ease;
+  transition: all 0.22s ease;
 }
 
-.workspace.sidebar-collapsed {
-  grid-template-columns: 48px minmax(0, 1fr);
+.workspace.sidebar-collapsed .sidebar {
+  width: 48px;
+  min-width: 48px;
+  padding: 10px 6px;
 }
 
 
 
 .sidebar {
+  flex-shrink: 0;
+  width: 220px;
+  min-width: 220px;
   border-right: 1px solid rgba(255, 255, 255, 0.09);
   padding: 14px 14px 20px 24px;
   background: rgba(9, 13, 15, 0.62);
-  overflow: hidden;
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: 0;
@@ -700,10 +721,14 @@ h3 {
 }
 
 .stage {
-  padding: 16px 18px 28px;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  padding: 16px 18px 16px;
   position: relative;
-  overflow: auto;
-  height: 100%;
+  display: flex;
+  flex-direction: column;
 }
 
 .stage-chat {
@@ -711,10 +736,12 @@ h3 {
   overflow: hidden;
   display: flex;
   flex-direction: column;
+  min-height: 0;
 }
 
 .stage-chat .stage-inner {
   flex: 1;
+  min-height: 0;
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -726,11 +753,14 @@ h3 {
 .chat-stage {
   display: flex;
   flex-direction: column;
-  height: 100%;
+  flex: 1;
+  min-height: 0;
 }
 
 .step1-form {
   flex-shrink: 0;
+  max-height: 45vh;
+  overflow-y: auto;
   padding: 14px 20px 12px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   display: flex;
@@ -1052,6 +1082,10 @@ h3 {
 .stage-inner {
   width: min(1564px, 100%);
   margin: 0 auto;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .content-head {
@@ -1266,7 +1300,7 @@ h3 {
 }
 
 .outline-content {
-  flex: 1;
+  height: var(--content-h);
   padding: 12px 14px;
   line-height: 1.7;
   color: #e8edf2;
@@ -1383,9 +1417,9 @@ h3 {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
   gap: 16px;
-  max-height: calc(100vh - 320px);
-  overflow: auto;
   padding-right: 6px;
+  max-height: var(--content-h);
+  overflow-y: auto;
 }
 
 /* ── 角色展示卡片 ── */
@@ -1696,51 +1730,150 @@ h3 {
 
 .planning-layout {
   display: grid;
-  grid-template-columns: 330px minmax(0, 1fr);
-  gap: 20px;
-  min-height: 620px;
+  grid-template-columns: 220px minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+  margin-top: 10px;
 }
 
 .episode-list {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  max-height: 610px;
-  overflow: auto;
-  padding-right: 6px;
+  gap: 6px;
+  padding: 14px;
+  height: var(--content-h);
+  overflow-y: auto;
 }
+
+.ep-right {
+  min-width: 0;
+  height: var(--content-h);
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── 集工作区 tab ── */
+.ep-workspace {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.ep-tab-content {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+.ep-tab-bar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 4px 10px;
+}
+.ep-tab {
+  padding: 6px 14px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #6b7280;
+  border: 1px solid transparent;
+  background: transparent;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.ep-tab:hover  { color: var(--text); background: rgba(255,255,255,0.05); }
+.ep-tab.active { color: #27e4f2; background: rgba(39,228,242,0.08); border-color: rgba(39,228,242,0.25); }
+.ep-tab-title  { margin-left: auto; font-size: 12px; }
+
+/* ── 正文 tab 布局 — 与 wb-layout 完全相同 ── */
+.ep-script-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: 16px;
+  align-items: stretch;
+  height: 100%;
+}
+.ep-script-main {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+  overflow-y: auto;
+}
+.ep-script-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.ep-script-meta { display: flex; gap: 12px; font-size: 13px; }
+.script-editor {
+  flex: 1;
+  min-height: 0;
+  padding: 16px;
+  font-size: 14px;
+  line-height: 1.8;
+  white-space: pre-wrap;
+  border-radius: 8px;
+  border: 1px solid rgba(255,255,255,0.08);
+  background: rgba(0,0,0,0.15);
+  outline: none;
+}
+.script-editor:focus { border-color: rgba(39,228,242,0.2); }
+
+/* ── 集卡片状态点 ── */
+.ep-status-dots { display: flex; gap: 3px; margin-left: auto; }
+.ep-dot {
+  font-size: 9px;
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: rgba(255,255,255,0.06);
+  color: #6b7280;
+  border: 1px solid rgba(255,255,255,0.08);
+}
+.ep-dot.on { background: rgba(39,228,242,0.15); color: #27e4f2; border-color: rgba(39,228,242,0.3); }
 
 .episode-card {
-  padding: 14px;
+  padding: 10px 12px;
   text-align: left;
   color: var(--text);
+  cursor: pointer;
+  border-radius: 8px;
+  border: 1px solid rgba(255,255,255,0.06);
+  background: rgba(255,255,255,0.03);
+  transition: background 0.15s;
 }
+.episode-card:hover  { background: rgba(255,255,255,0.06); }
+.episode-card.active { background: rgba(39,228,242,0.08); border-color: rgba(39,228,242,0.3); }
 
-.episode-card strong {
-  display: block;
-  margin-bottom: 6px;
+.ep-card-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 3px;
 }
+.ep-num { font-size: 11px; color: #6b7280; }
+.ep-card-title { font-size: 13px; font-weight: 600; margin: 0 0 3px; }
+.ep-card-goal  { font-size: 12px; line-height: 1.5; margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-.episode-card p {
-  color: #9eabb7;
-  font-size: 13px;
-  line-height: 1.55;
-}
+.ep-card-actions { margin-top: 8px; }
+.ep-card-actions .ghost-button { font-size: 11px; padding: 3px 8px; }
 
-.detail-form {
-  display: grid;
-  gap: 16px;
-}
+.mini-chip.warn { background: rgba(251,146,60,0.25); color: #fb923c; border-color: rgba(251,146,60,0.4); }
 
-.detail-form input {
-  height: 42px;
-  padding: 0 12px;
+.ep-detail-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+  overflow-y: auto;
 }
+.ep-detail-panel input  { height: 38px; padding: 0 10px; }
+.ep-detail-panel textarea { min-height: 80px; padding: 10px; }
 
-.detail-form textarea {
-  padding: 12px;
-  min-height: 120px;
-}
+.detail-form { display: grid; gap: 16px; }
+.detail-form input   { height: 42px; padding: 0 12px; }
+.detail-form textarea { padding: 12px; min-height: 120px; }
 
 .writing-layout {
   display: grid;
@@ -2441,6 +2574,20 @@ select:focus,
   gap: 16px;
   align-items: start;
   margin-top: 10px;
+  flex: 1;
+  min-height: 0;
+}
+
+/* episode plan/script tab — fill ep-tab-content height */
+.ep-plan-layout {
+  margin-top: 0;
+  align-items: stretch;
+  height: 100%;
+}
+.ep-plan-layout .wb-chat-inner,
+.ep-script-layout .wb-chat-inner {
+  height: 100%;
+  min-height: 0;
 }
 
 .regen-input-block {
@@ -2456,6 +2603,8 @@ select:focus,
 
 .wb-main {
   min-width: 0;
+  height: var(--content-h);
+  overflow-y: auto;
 }
 
 .wb-chat-panel {
@@ -2467,8 +2616,7 @@ select:focus,
   display: flex;
   flex-direction: column;
   gap: 0;
-  /* nav(48) + workbar(56) + stage-padding(16) + sticky-top(16) + step-head(~110) + bottom-pad(28) */
-  height: calc(100vh - var(--nav-h) - 274px);
+  height: var(--content-h);
   min-height: 360px;
   overflow: hidden;
 }
