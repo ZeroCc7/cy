@@ -1378,52 +1378,295 @@ h3 {
   min-height: 510px;
 }
 
+/* ── 角色列表网格 ── */
 .roles-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(250px, 1fr));
-  gap: 18px;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
   max-height: calc(100vh - 320px);
   overflow: auto;
   padding-right: 6px;
 }
 
-.role-card {
+/* ── 角色展示卡片 ── */
+.role-card { padding: 0; overflow: hidden; }
+
+.char-card-body {
+  display: flex;
+  gap: 0;
+  min-height: 260px;
+}
+
+/* 左侧图片列 */
+.char-img-col {
+  width: 160px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  background: rgba(0,0,0,0.2);
+  border-right: 1px solid rgba(255,255,255,0.07);
+}
+
+.char-img-main {
+  width: 100%;
+  flex: 1;
+  object-fit: cover;
+  display: block;
+  min-height: 180px;
+  max-height: 280px;
+}
+.char-img-main.is-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 48px;
+  font-weight: 900;
+  color: #27e4f2;
+  background: linear-gradient(145deg, rgba(53,214,223,0.15), rgba(53,214,223,0.04));
+}
+.char-img-main.is-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.char-img-thumbs {
+  display: flex;
+  gap: 4px;
+  padding: 6px;
+  overflow-x: auto;
+  background: rgba(0,0,0,0.15);
+}
+.char-thumb {
+  width: 36px;
+  height: 36px;
+  border-radius: 4px;
+  overflow: hidden;
+  border: 2px solid transparent;
+  padding: 0;
+  flex-shrink: 0;
+}
+.char-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.char-thumb.active { border-color: #27e4f2; }
+
+.char-img-btns {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px;
+}
+.char-img-btns .ghost-button,
+.char-upload-label {
+  font-size: 11px;
+  padding: 4px 8px;
+  cursor: pointer;
+  text-align: center;
+}
+.char-upload-label { display: block; }
+
+/* 右侧信息列 */
+.char-info-col {
+  flex: 1;
+  min-width: 0;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow-y: auto;
+}
+
+.char-name-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.char-name { font-size: 16px; font-weight: 700; }
+
+.char-badge {
+  font-size: 11px;
+  padding: 2px 7px;
+  border-radius: 10px;
+  font-weight: 600;
+}
+.cbadge-main    { background: rgba(99,102,241,0.25); color: #a5b4fc; border: 1px solid rgba(99,102,241,0.4); }
+.cbadge-villain { background: rgba(239,68,68,0.2);   color: #fca5a5; border: 1px solid rgba(239,68,68,0.35); }
+.cbadge-sup     { background: rgba(255,255,255,0.08); color: #9ca3af; border: 1px solid rgba(255,255,255,0.12); }
+
+.char-tags { display: flex; flex-wrap: wrap; gap: 4px; }
+.char-tag {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: rgba(255,255,255,0.06);
+  color: #9ca3af;
+  border: 1px solid rgba(255,255,255,0.1);
+}
+
+.char-field-row { display: grid; grid-template-columns: 32px 1fr; gap: 6px; align-items: start; }
+.char-field-label { font-size: 11px; color: #6b7280; padding-top: 2px; }
+.char-field-value { font-size: 13px; line-height: 1.6; margin: 0; white-space: pre-wrap; color: #d1d5db; }
+
+.char-card-footer {
+  padding: 8px 12px;
+  border-top: 1px solid rgba(255,255,255,0.07);
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* ── 角色 AI 背景对话（在 modal 内） ── */
+.char-bg-chat {
+  margin-top: 10px;
+  border-top: 1px solid rgba(255,255,255,0.08);
+  padding-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.char-bg-chat-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 24px;
+}
+.char-bg-msgs {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+.char-bg-chat .chat-input {
+  min-height: 56px;
+  max-height: 120px;
+  font-size: 13px;
+}
+
+/* ── 角色编辑 modal ── */
+.img-preview-backdrop {
+  background: rgba(0,0,0,0.92);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: zoom-out;
+}
+.img-preview-full {
+  max-width: 90vw;
+  max-height: 92vh;
+  object-fit: contain;
+  border-radius: 6px;
+  box-shadow: 0 8px 48px rgba(0,0,0,0.6);
+}
+.clickable { cursor: zoom-in; }
+
+.modal-gen-image {
+  width: min(640px, 92vw);
+}
+.gen-image-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.gen-image-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.gen-prompt-textarea {
+  min-height: 200px;
+  font-size: 13px;
+  line-height: 1.7;
+  resize: vertical;
   padding: 12px;
 }
 
-.role-top {
-  display: grid;
-  grid-template-columns: 44px 1fr;
-  gap: 10px;
-  align-items: center;
-  padding-bottom: 10px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+.modal-char-edit {
+  width: min(900px, 95vw);
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
 }
-
-.role-avatar {
-  width: 44px;
-  height: 44px;
-  border-radius: 6px;
-  display: grid;
-  place-items: center;
-  font-size: 20px;
+.modal-char-body {
+  display: flex;
+  gap: 0;
+  flex: 1;
+  overflow: hidden;
+  padding: 0 !important;
+}
+.modal-char-img-col {
+  width: 260px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  background: rgba(0,0,0,0.2);
+  border-right: 1px solid rgba(255,255,255,0.07);
+  padding-bottom: 12px;
+}
+.modal-char-img {
+  width: 100%;
+  aspect-ratio: 3/4;
+  object-fit: cover;
+  display: block;
+}
+.modal-char-img.is-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 64px;
   font-weight: 900;
   color: #27e4f2;
-  background: linear-gradient(145deg, rgba(53, 214, 223, 0.28), rgba(53, 214, 223, 0.06));
-  border: 1px solid rgba(53, 214, 223, 0.28);
+  background: linear-gradient(145deg, rgba(53,214,223,0.15), rgba(53,214,223,0.04));
 }
+.modal-char-img.is-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 200px;
+}
+.modal-char-thumbs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px;
+}
+.modal-thumb-wrap { position: relative; }
+.modal-thumb {
+  width: 56px;
+  height: 56px;
+  border-radius: 5px;
+  overflow: hidden;
+  border: 2px solid transparent;
+  padding: 0;
+}
+.modal-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.modal-thumb.active { border-color: #27e4f2; }
+.modal-thumb-del {
+  position: absolute;
+  top: -4px; right: -4px;
+  width: 16px; height: 16px;
+  border-radius: 50%;
+  background: rgba(239,68,68,0.85);
+  color: #fff;
+  font-size: 11px;
+  line-height: 16px;
+  text-align: center;
+  padding: 0;
+  display: none;
+}
+.modal-thumb-wrap:hover .modal-thumb-del { display: block; }
 
-.role-fields {
-  margin-top: 10px;
-  display: grid;
-  gap: 8px;
+.modal-char-fields-col {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
-
-.role-fields textarea {
-  min-height: 70px;
-  padding: 10px;
-  font-size: 13px;
-}
+.char-edit-field { display: flex; flex-direction: column; gap: 4px; }
+.char-edit-field textarea { min-height: 70px; }
+.char-edit-row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 
 .small-select,
 .small-input {
@@ -2184,12 +2427,31 @@ select:focus,
   flex-shrink: 0;
   padding-top: 6px;
 }
+
+.wb-chat-inner .panel-head {
+  flex-shrink: 0;
+}
+
+.wb-chat-inner .refine-applying {
+  flex-shrink: 0;
+}
 .wb-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 320px;
   gap: 16px;
   align-items: start;
   margin-top: 10px;
+}
+
+.regen-input-block {
+  padding: 12px 0 4px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  margin-bottom: 12px;
+}
+
+/* Panels inside the split layout must not add their own top margin */
+.wb-layout .panel {
+  margin-top: 0;
 }
 
 .wb-main {
@@ -2205,8 +2467,9 @@ select:focus,
   display: flex;
   flex-direction: column;
   gap: 0;
-  height: calc(100vh - 200px);
-  min-height: 480px;
+  /* nav(48) + workbar(56) + stage-padding(16) + sticky-top(16) + step-head(~110) + bottom-pad(28) */
+  height: calc(100vh - var(--nav-h) - 274px);
+  min-height: 360px;
   overflow: hidden;
 }
 

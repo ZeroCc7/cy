@@ -16,10 +16,19 @@ from fastapi.responses import StreamingResponse, FileResponse, JSONResponse
 from openai import OpenAI
 from supabase import create_client, Client
 from exporter import save_full_script, extract_episode_outlines
-from prompts import (OUTLINE_SYSTEM, OUTLINE_PROMPT, EPISODE_SYSTEM, EPISODE_PROMPT,
-                     REFINE_PROMPT, WORLDBUILDING_SYSTEM, WORLDBUILDING_PROMPT,
-                     CHARACTER_EXTRACT_SYSTEM, CHARACTER_EXTRACT_PROMPT,
-                     EPISODE_PLAN_SYSTEM, EPISODE_PLAN_PROMPT, SINGLE_EPISODE_PLAN_PROMPT)
+from prompts import (
+    CHAT_SYSTEM,
+    OUTLINE_SYSTEM, OUTLINE_PROMPT,
+    OUTLINE_PLANS_SYSTEM, OUTLINE_PLANS_PROMPT, OUTLINE_PLANS_FROM_CHAT_PROMPT,
+    REFINE_OUTLINE_SYSTEM, APPLY_OUTLINE_REFINE_SYSTEM, APPLY_OUTLINE_REFINE_PROMPT,
+    WORLDBUILDING_SYSTEM, WORLDBUILDING_PROMPT,
+    REFINE_WB_SYSTEM, APPLY_WB_REFINE_SYSTEM, APPLY_WB_REFINE_PROMPT,
+    EPISODE_SYSTEM, EPISODE_PROMPT,
+    REFINE_PROMPT,
+    CHARACTER_EXTRACT_SYSTEM, CHARACTER_EXTRACT_PROMPT,
+    REFINE_CHAR_BG_SYSTEM, APPLY_CHAR_BG_SYSTEM, APPLY_CHAR_BG_PROMPT,
+    EPISODE_PLAN_SYSTEM, EPISODE_PLAN_PROMPT, SINGLE_EPISODE_PLAN_PROMPT,
+)
 
 load_dotenv()
 
@@ -95,24 +104,15 @@ async def styles_css():
 @app.post("/api/chat")
 async def chat(req: Request):
     body = await req.json()
-    system = """你是一个短视频剧本创作助手，专注于古装/玄幻类型。
-通过友好对话收集用户的故事需求：主角设定、故事核心、世界观类型、情感基调、想要的爽点。
-每次最多问2个问题，聊天式交流，语气亲切自然。
-当信息已足够时，在回复末尾单独一行写：READY"""
-    return sse_stream(system, body.get("messages", []), max_tokens=600)
+    return sse_stream(CHAT_SYSTEM, body.get("messages", []), max_tokens=600)
 
 
 @app.post("/api/refine-outline")
 async def refine_outline(req: Request):
     body = await req.json()
     outline = body.get("outline", "")
-    system = (
-        "你是专业短剧策划编剧，正在帮助用户打磨故事大纲。\n"
-        f"【当前大纲】\n{outline}\n\n"
-        "根据用户的修改意见，给出具体的调整建议或直接提供修改后的大纲段落。"
-        "回答简洁有力，每次最多修改用户指定的部分。"
-        "如果用户对大纲满意，在回复末尾单独一行写：OUTLINE_READY"
-    )
+    outline_context = f"【当前大纲】\n{outline}\n\n" if outline else ""
+    system = REFINE_OUTLINE_SYSTEM.format(outline_context=outline_context)
     return sse_stream(system, body.get("messages", []), max_tokens=800)
 
 
@@ -120,35 +120,20 @@ async def refine_outline(req: Request):
 async def apply_outline_refine(req: Request):
     body = await req.json()
     outline = body.get("outline", "")
-    conversation = body.get("conversation", [])
     conv_text = "\n".join(
         f"{'用户' if m.get('role') == 'user' else 'AI'}：{m.get('content', '')}"
-        for m in conversation
+        for m in body.get("conversation", [])
     )
-    system = (
-        "你是专业短剧策划编剧。根据原始大纲和用户与AI的打磨讨论，"
-        "生成一个完整优化后的新大纲版本。直接输出大纲正文，不需要前言和解释。"
-        "大纲内容完整，不少于300字，覆盖故事背景、人物、核心矛盾和主线发展。"
-    )
-    prompt = (
-        f"【原始大纲】\n{outline}\n\n"
-        f"【打磨讨论记录】\n{conv_text}\n\n"
-        "请根据以上讨论，生成一个完整的优化大纲："
-    )
-    return sse_stream(system, [{"role": "user", "content": prompt}], max_tokens=3000)
+    prompt = APPLY_OUTLINE_REFINE_PROMPT.format(outline=outline, conv_text=conv_text)
+    return sse_stream(APPLY_OUTLINE_REFINE_SYSTEM, [{"role": "user", "content": prompt}], max_tokens=3000)
 
 
 @app.post("/api/refine-worldbuilding")
 async def refine_worldbuilding(req: Request):
     body = await req.json()
     wb = body.get("worldbuilding", "")
-    system = (
-        "你是专业短剧策划编剧，正在帮助用户打磨故事世界观设定。\n"
-        + (f"【当前世界观】\n{wb}\n\n" if wb else "用户尚未生成世界观，请根据他们的描述给出建议。\n\n")
-        + "根据用户的修改意见，给出具体调整建议或直接提供修改后的段落。"
-        "回答简洁有力，每次聚焦用户指定的部分。"
-        "如果用户对世界观满意，在回复末尾单独一行写：WB_READY"
-    )
+    wb_context = f"【当前世界观】\n{wb}\n\n" if wb else "用户尚未生成世界观，请根据他们的描述给出建议。\n\n"
+    system = REFINE_WB_SYSTEM.format(wb_context=wb_context)
     return sse_stream(system, body.get("messages", []), max_tokens=1000)
 
 
@@ -156,22 +141,13 @@ async def refine_worldbuilding(req: Request):
 async def apply_worldbuilding_refine(req: Request):
     body = await req.json()
     wb = body.get("worldbuilding", "")
-    conversation = body.get("conversation", [])
     conv_text = "\n".join(
         f"{'用户' if m.get('role') == 'user' else 'AI'}：{m.get('content', '')}"
-        for m in conversation
+        for m in body.get("conversation", [])
     )
-    system = (
-        "你是专业短剧策划编剧。根据原始世界观和用户与AI的打磨讨论，"
-        "生成一个完整优化后的新世界观版本。直接输出世界观正文，不需要前言和解释。"
-        "内容完整，覆盖时代背景、社会规则、地理势力、核心冲突来源等要素。"
-    )
-    prompt = (
-        (f"【原始世界观】\n{wb}\n\n" if wb else "")
-        + f"【打磨讨论记录】\n{conv_text}\n\n"
-        + "请根据以上讨论，生成一个完整的优化世界观："
-    )
-    return sse_stream(system, [{"role": "user", "content": prompt}], max_tokens=3000)
+    wb_original = f"【原始世界观】\n{wb}\n\n" if wb else ""
+    prompt = APPLY_WB_REFINE_PROMPT.format(wb_original=wb_original, conv_text=conv_text)
+    return sse_stream(APPLY_WB_REFINE_SYSTEM, [{"role": "user", "content": prompt}], max_tokens=3000)
 
 
 @app.post("/api/worldbuilding")
@@ -495,7 +471,7 @@ async def upload_character_image(pid: str, cid: str, file: UploadFile = File(...
 async def generate_character_image(pid: str, cid: str, req: Request):
     body = await req.json()
     appearance = body.get("appearance", "神秘人物")
-    model = body.get("model", "wan2.1-t2i-turbo")
+    model = body.get("model", "wan2.7-image-pro")
     custom_prompt = (body.get("prompt") or "").strip()
     prompt_text = custom_prompt if custom_prompt else (
         f"{appearance}，古装写实风格，人物设定图，全身正面站立，"
@@ -597,34 +573,6 @@ async def generate_single_episode_plan(pid: str, ep_num: int, req: Request):
 
 # ── New-frontend AI endpoints (no pid required) ──────────────────────────────
 
-_OUTLINE_PLANS_SYSTEM = (
-    "你是专业短剧策划编剧。根据故事定位，生成3个风格各异的完整故事大纲方案。"
-    "只输出JSON数组，不输出任何其他内容。"
-)
-
-_OUTLINE_PLANS_PROMPT = """根据以下故事定位，生成3个不同风格的故事大纲方案。
-
-故事定位：
-- 名称：{name}
-- 类型：{work_type}，共{episode_count}集
-- 受众：{audience}
-- 题材：{genres}
-- 核心元素：{core_elements}
-- 情感基调：{emotional_tone}
-
-要求：
-1. 3个方案需有明显风格差异（如爽感逆袭、权谋悬疑、情感虐恋）
-2. 每个方案包含：完整故事梗概 + 开篇设计 + 主线推进 + 高潮转折 + 结局方向
-3. 内容详实，每方案不少于300字
-
-输出格式（严格JSON数组，无其他内容）：
-[
-  {{"title": "方案一", "label": "偏爽感", "content": "完整大纲内容..."}},
-  {{"title": "方案二", "label": "偏权谋", "content": "完整大纲内容..."}},
-  {{"title": "方案三", "label": "偏情感", "content": "完整大纲内容..."}}
-]"""
-
-
 @app.post("/api/outline-plans")
 async def outline_plans_gen(req: Request):
     body = await req.json()
@@ -632,14 +580,12 @@ async def outline_plans_gen(req: Request):
     episode_count = body.get("episodeCount", 10)
     requirements  = body.get("requirements", "")
     if requirements:
-        prompt = (
-            f"请根据以下用户与AI的需求对话，生成3个风格各异的故事大纲方案，预计集数 {episode_count} 集。\n\n"
-            f"【需求对话记录】\n{requirements}\n\n"
-            f"输出格式（严格JSON数组，无其他内容）：\n"
-            f'[{{"title":"方案一","label":"风格A","content":"完整大纲内容不少于300字..."}},{{"title":"方案二","label":"风格B","content":"..."}},{{"title":"方案三","label":"风格C","content":"..."}}]'
+        prompt = OUTLINE_PLANS_FROM_CHAT_PROMPT.format(
+            episode_count=episode_count,
+            requirements=requirements,
         )
     else:
-        prompt = _OUTLINE_PLANS_PROMPT.format(
+        prompt = OUTLINE_PLANS_PROMPT.format(
             name          = pos.get("name", "未命名"),
             work_type     = pos.get("workType", "短剧"),
             episode_count = episode_count,
@@ -651,7 +597,7 @@ async def outline_plans_gen(req: Request):
     resp = client.chat.completions.create(
         model=MODEL, max_tokens=4000, stream=False,
         messages=[
-            {"role": "system", "content": _OUTLINE_PLANS_SYSTEM},
+            {"role": "system", "content": OUTLINE_PLANS_SYSTEM},
             {"role": "user",   "content": prompt},
         ],
     )
@@ -668,9 +614,9 @@ async def outline_plans_gen(req: Request):
 
 @app.post("/api/generate-characters")
 async def generate_characters_standalone(req: Request):
-    body    = await req.json()
-    outline = body.get("outline", "")
-    prompt  = CHARACTER_EXTRACT_PROMPT.format(worldbuilding=outline)
+    body          = await req.json()
+    worldbuilding = body.get("worldbuilding", "")
+    prompt        = CHARACTER_EXTRACT_PROMPT.format(worldbuilding=worldbuilding)
     resp = client.chat.completions.create(
         model=MODEL, max_tokens=4096, stream=False,
         messages=[
@@ -683,6 +629,27 @@ async def generate_characters_standalone(req: Request):
     if not characters:
         raise HTTPException(500, "角色提取失败，请重试")
     return JSONResponse(characters)
+
+
+@app.post("/api/refine-character-background")
+async def refine_character_background(req: Request):
+    body      = await req.json()
+    char_name = body.get("charName", "")
+    bg        = body.get("background", "")
+    messages  = body.get("messages", [])
+    system    = REFINE_CHAR_BG_SYSTEM.format(char_name=char_name, bg_context=bg or "（暂无）")
+    return sse_stream(system, messages, max_tokens=800)
+
+
+@app.post("/api/apply-character-background-refine")
+async def apply_character_background_refine(req: Request):
+    body      = await req.json()
+    char_name = body.get("charName", "")
+    bg        = body.get("background", "")
+    messages  = body.get("messages", [])
+    conv_text = "\n".join(f"{'用户' if m['role']=='user' else 'AI'}：{m['content']}" for m in messages)
+    prompt    = APPLY_CHAR_BG_PROMPT.format(char_name=char_name, bg_original=bg or "（暂无）", conv_text=conv_text)
+    return sse_stream(APPLY_CHAR_BG_SYSTEM, [{"role": "user", "content": prompt}], max_tokens=600)
 
 
 @app.post("/api/episode-plans")

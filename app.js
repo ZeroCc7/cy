@@ -60,6 +60,17 @@ app.addEventListener("click", onClick);
 app.addEventListener("input", onInput);
 app.addEventListener("change", onInput);
 app.addEventListener("keydown", onKeyDown);
+portal.addEventListener("input", onInput);
+portal.addEventListener("change", (e) => {
+  onInput(e);
+  if (e.target.dataset.action === "upload-char-image") {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const script = activeScript();
+    const char = script?.characters.find((c) => c.id === e.target.dataset.charId);
+    if (char && script) uploadCharImage(script, char, file).catch(() => toast("上传失败，请重试。"));
+  }
+});
 document.addEventListener("mouseup", captureSelection);
 document.addEventListener("keyup", captureSelection);
 
@@ -116,10 +127,28 @@ function normalizeState(raw) {
     generation: null,
     selection: null,
     sidebarCollapsed: false,
+    showOutlineRegen: false,
+    outlineRegenContext: "",
   };
   if (!next.scripts.find((script) => script.id === next.activeScriptId)) {
     next.activeScriptId = next.scripts[0]?.id;
   }
+  // derive maxStep purely from content — never trust currentStep for this
+  next.scripts.forEach((s) => {
+    (s.characters || []).forEach((c) => {
+      if (!c.images) c.images = c.imageUrl ? [{ id: uid(), url: c.imageUrl }] : [];
+      if (!c.bgConversation) c.bgConversation = [];
+      if (c._bgRefineReady === undefined) c._bgRefineReady = false;
+    });
+    let max = 1;
+    if (s.storyOutline?.plans?.length > 0) max = Math.max(max, 2);
+    if (s.worldbuilding) max = Math.max(max, 3);
+    if ((s.characters || []).some((c) => c.name && c.name !== "未命名")) max = Math.max(max, 4);
+    if ((s.episodes || []).some((e) => e.goal || e.conflict || e.hook)) max = Math.max(max, 5);
+    if ((s.episodes || []).some((e) => e.scriptContent)) max = Math.max(max, 6);
+    s.maxStep = max;
+    if (s.currentStep > max) s.currentStep = max;
+  });
   return next;
 }
 
@@ -306,6 +335,7 @@ function createBlankScript() {
     status: "DRAFT",
     completionRate: 10,
     currentStep: 1,
+    maxStep: 1,
     createdAt: formatDate(new Date()),
     updatedAt: formatDate(new Date()),
     storyPositioning: {
@@ -470,8 +500,9 @@ function renderSidebar(script) {
       </button>
       <div class="step-list">
         ${steps.map((step) => {
-          const done = script.completionRate >= step.progress || step.id < script.currentStep;
-          const locked = !done && step.id > script.currentStep;
+          const maxStep = script.maxStep || script.currentStep;
+          const done = step.id < maxStep;
+          const locked = step.id > maxStep;
           const warn = step.id >= 5 && hasPendingDownstream(script);
           const badge = warn && step.id === 5 ? "⚠" : done ? "✓" : "";
           if (collapsed) {
@@ -692,20 +723,36 @@ function renderStepTwo(script) {
 
   return `
     ${renderStepHead(2, "生成故事大纲", "选择方向，或与 AI 打磨大纲细节。", `<button class="primary-button" type="button" data-action="confirm-outline" ${plans.length ? "" : "disabled"}>✳ 确认大纲，进入世界观</button>`)}
-    <section class="panel panel-pad">
-      <div class="panel-head">
-        <div class="tabs">
-          <button class="tab-button ${state.outlineTab === "plans" ? "active" : ""}" type="button" data-action="set-outline-tab" data-tab="plans">✳ 多方案生成</button>
-          <button class="tab-button ${state.outlineTab === "edit" ? "active" : ""}" type="button" data-action="set-outline-tab" data-tab="edit">▤ 编辑模式</button>
-        </div>
-        <div class="chip-line">
-          <button class="ghost-button violet" type="button" data-action="regenerate-outline">↻ 重新生成</button>
-          ${state.outlineTab === "plans" ? `<button class="ghost-button cyan" type="button" data-action="merge-outline" ${plans.length ? "" : "disabled"}>AI 融合方案</button>` : ""}
-        </div>
+    <div class="wb-layout">
+      <div class="wb-main">
+        <section class="panel panel-pad">
+          <div class="panel-head">
+            <div class="tabs">
+              <button class="tab-button ${state.outlineTab === "plans" ? "active" : ""}" type="button" data-action="set-outline-tab" data-tab="plans">✳ 多方案生成</button>
+              <button class="tab-button ${state.outlineTab === "edit" ? "active" : ""}" type="button" data-action="set-outline-tab" data-tab="edit">▤ 编辑模式</button>
+            </div>
+            <div class="chip-line">
+              ${state.showOutlineRegen
+                ? `<button class="ghost-button" type="button" data-action="cancel-outline-regen">取消</button>
+                   <button class="primary-button violet" type="button" data-action="confirm-outline-regen">开始生成</button>`
+                : `<button class="ghost-button violet" type="button" data-action="regenerate-outline">↻ 重新生成</button>
+                   ${state.outlineTab === "plans" ? `<button class="ghost-button cyan" type="button" data-action="merge-outline" ${plans.length ? "" : "disabled"}>AI 融合方案</button>` : ""}`
+              }
+            </div>
+          </div>
+          ${state.showOutlineRegen ? `
+            <div class="regen-input-block">
+              <label class="field-title">重新生成方向（选填）</label>
+              <textarea class="chat-input" data-ui="outline-regen-input" placeholder="例：换成悬疑风格，主角改为女性，节奏更快…" rows="3" style="min-height:80px;max-height:160px;margin-top:8px"></textarea>
+            </div>
+          ` : ""}
+          ${!plans.length ? renderEmptyOutline() : state.outlineTab === "plans" ? renderOutlinePlans(script, plans) : renderOutlineEditor(selectedPlan)}
+        </section>
       </div>
-      ${!plans.length ? renderEmptyOutline() : state.outlineTab === "plans" ? renderOutlinePlans(script, plans) : renderOutlineEditor(selectedPlan)}
-    </section>
-    ${plans.length ? renderOutlineRefineChat(script) : ""}
+      <div class="wb-chat-panel">
+        ${renderOutlineRefineChat(script)}
+      </div>
+    </div>
   `;
 }
 
@@ -729,18 +776,17 @@ function renderOutlineRefineChat(script) {
     ? `<div class="chat-bubble ai"><span class="chat-avatar">AI</span><div class="chat-text md-content">${renderMd(state.generation.text || "…")}<span class="chat-cursor"></span></div></div>`
     : "";
 
-  const applyingOverlay = isApplying
-    ? `<div class="refine-applying"><span class="spinner" style="width:18px;height:18px;border-width:2px"></span>AI 正在根据讨论重新生成大纲…</div>`
-    : "";
-
   return `
-    <section class="panel panel-pad outline-refine-panel">
+    <div class="panel panel-pad wb-chat-inner">
       <div class="panel-head">
         <h3>与 AI 打磨大纲</h3>
-        <span class="muted" style="font-size:12px">与 AI 讨论修改方向，确认后一键重新生成完整大纲</span>
+        <span class="muted" style="font-size:12px">讨论修改方向，确认后重新生成</span>
       </div>
-      ${applyingOverlay}
-      ${msgs.length ? `<div class="outline-refine-msgs" id="outline-refine-msgs">${bubbles}${streamingBubble}</div>` : ""}
+      ${isApplying ? `<div class="refine-applying"><span class="spinner" style="width:18px;height:18px;border-width:2px"></span>AI 正在根据讨论重新生成大纲…</div>` : ""}
+      ${msgs.length
+        ? `<div class="wb-msgs" id="outline-refine-msgs">${bubbles}${streamingBubble}</div>`
+        : `<div class="wb-msgs-empty">还没有对话，可以告诉 AI 你希望大纲如何调整。</div>`
+      }
       ${canApply ? `
         <button class="primary-button violet refine-apply-btn ${script._outlineRefineReady ? "ready-glow" : ""}" type="button" data-action="apply-outline-refine">
           ✳ 确认，重新生成大纲
@@ -752,7 +798,7 @@ function renderOutlineRefineChat(script) {
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
         </button>
       </div>
-    </section>
+    </div>
   `;
 }
 
@@ -928,38 +974,163 @@ function renderStepFour(script) {
   `;
 }
 
-function renderRoleCard(character) {
+function renderCharBgChat(character) {
+  const msgs = character.bgConversation || [];
+  const busy = state.generation?.active && state.generation.kind === `char-bg-${character.id}`;
+  const canApply = msgs.length > 0 && !busy;
+  const ready = character._bgRefineReady;
+  const msgsHtml = msgs.map((m) => `
+    <div class="chat-bubble ${m.role === "user" ? "user" : "ai"}">
+      <div class="chat-avatar">${m.role === "user" ? "我" : "AI"}</div>
+      <div class="chat-text md-content">${m.role === "user" ? escapeHtml(m.content) : renderMd(m.content)}</div>
+    </div>`).join("");
   return `
-    <article class="role-card">
-      <div class="role-top">
-        <div class="role-avatar">${escapeHtml(firstChar(character.name))}</div>
-        <div>
-          <input class="small-input" data-character-field="name" data-id="${character.id}" value="${escapeAttr(character.name)}" />
-          <div class="chip-line" style="margin-top:8px">
-            ${["男", "女", "其他"].map((gender) => `<button class="role-chip ${character.gender === gender ? "hot" : ""}" type="button" data-action="set-character-gender" data-id="${character.id}" data-value="${gender}">${gender}</button>`).join("")}
-          </div>
-        </div>
+    <div class="char-bg-chat" data-char-id="${character.id}">
+      <div class="char-bg-chat-head">
+        <span class="muted" style="font-size:12px">AI 优化人物背景</span>
+        ${canApply ? `<button class="refine-apply-btn ${ready ? "ready-glow" : ""}" type="button" data-action="apply-char-bg-refine" data-char-id="${character.id}">✳ 确认更新背景</button>` : ""}
       </div>
-      <div class="role-fields">
-        <label class="field-title">角色定位</label>
-        <select class="small-select" data-character-field="role" data-id="${character.id}">
-          ${["主角", "女主", "反派", "配角", "导师", "其他"].map((role) => `<option ${character.role === role ? "selected" : ""}>${role}</option>`).join("")}
-        </select>
-        <label class="field-title">性格特征</label>
-        <input class="small-input" data-character-field="personalityText" data-id="${character.id}" value="${escapeAttr((character.personality || []).join("、"))}" />
-        <label class="field-title">人物小传</label>
-        <textarea data-character-field="biography" data-id="${character.id}">${escapeHtml(character.biography || "")}</textarea>
-        <label class="field-title">外貌设定</label>
-        <textarea data-character-field="appearance" data-id="${character.id}">${escapeHtml(character.appearance || "")}</textarea>
-        <label class="field-title">人物背景</label>
-        <textarea data-character-field="background" data-id="${character.id}">${escapeHtml(character.background || "")}</textarea>
-        <button class="danger-button" type="button" data-action="delete-character" data-id="${character.id}">删除角色</button>
+      ${msgs.length ? `<div class="char-bg-msgs">${msgsHtml}</div>` : ""}
+      <div class="chat-input-row">
+        <textarea class="chat-input" placeholder="描述你对背景的想法…" data-ui="char-bg-input" data-char-id="${character.id}"></textarea>
+        <button class="chat-send-btn" type="button" data-action="send-char-bg-chat" data-char-id="${character.id}"${busy ? " disabled" : ""}>↑</button>
       </div>
-    </article>
-  `;
+    </div>`;
 }
 
-function renderStepFour(script) {
+function renderRoleCard(character) {
+  const imgs = character.images || [];
+  const activeIdx = Math.min(character._activeImgIdx || 0, Math.max(0, imgs.length - 1));
+  const activeImg = imgs[activeIdx];
+  const isImgGen = character._imgGenerating;
+  const badgeClass = { "主角": "cbadge-main", "女主": "cbadge-main", "反派": "cbadge-villain" }[character.role] || "cbadge-sup";
+
+  const imgArea = isImgGen
+    ? `<div class="char-img-main is-loading"><div class="spinner"></div><p class="muted" style="font-size:11px;margin-top:6px">生成中…</p></div>`
+    : activeImg
+      ? `<img class="char-img-main clickable" src="${escapeAttr(activeImg.url)}" alt="${escapeAttr(character.name)}" data-action="preview-image" data-url="${escapeAttr(activeImg.url)}" />`
+      : `<div class="char-img-main is-placeholder"><span>${escapeHtml(firstChar(character.name))}</span></div>`;
+
+  const thumbs = imgs.length > 1 ? `
+    <div class="char-img-thumbs">
+      ${imgs.map((img, i) => `<button class="char-thumb ${i === activeIdx ? "active" : ""}" type="button" data-action="char-select-img" data-char-id="${character.id}" data-idx="${i}"><img src="${escapeAttr(img.url)}" /></button>`).join("")}
+    </div>` : "";
+
+  const fields = [
+    character.biography  && { label: "小传", val: character.biography },
+    character.appearance && { label: "外貌", val: character.appearance },
+    character.background && { label: "背景", val: character.background },
+  ].filter(Boolean);
+
+  return `
+    <article class="role-card">
+      <div class="char-card-body">
+        <div class="char-img-col">
+          ${imgArea}
+          ${thumbs}
+          <div class="char-img-btns">
+            <button class="ghost-button" type="button" data-action="generate-char-image" data-char-id="${character.id}"${isImgGen ? " disabled" : ""}>✦ 生成</button>
+            <label class="ghost-button char-upload-label">↑ 上传<input type="file" accept="image/*" data-action="upload-char-image" data-char-id="${character.id}" style="display:none"></label>
+          </div>
+        </div>
+        <div class="char-info-col">
+          <div class="char-name-row">
+            <span class="char-name">${escapeHtml(character.name)}</span>
+            <span class="char-badge ${badgeClass}">${escapeHtml(character.role)}</span>
+            <span class="muted" style="font-size:12px">${escapeHtml(character.gender)} · ${escapeHtml(character.age || "")}</span>
+          </div>
+          ${(character.personality || []).length ? `<div class="char-tags">${character.personality.map((t) => `<span class="char-tag">${escapeHtml(t)}</span>`).join("")}</div>` : ""}
+          ${fields.map((f) => `<div class="char-field-row"><span class="char-field-label">${f.label}</span><p class="char-field-value">${escapeHtml(f.val)}</p></div>`).join("")}
+        </div>
+      </div>
+      <div class="char-card-footer">
+        <button class="ghost-button" type="button" data-action="open-char-edit" data-char-id="${character.id}">✎ 编辑</button>
+      </div>
+    </article>`;
+}
+
+function renderCharEditModal(char) {
+  const imgs = char.images || [];
+  const activeIdx = Math.min(char._activeImgIdx || 0, Math.max(0, imgs.length - 1));
+  const activeImg = imgs[activeIdx];
+  const isImgGen = char._imgGenerating;
+
+  const imgMain = isImgGen
+    ? `<div class="modal-char-img is-loading"><div class="spinner"></div></div>`
+    : activeImg
+      ? `<img class="modal-char-img clickable" src="${escapeAttr(activeImg.url)}" data-action="preview-image" data-url="${escapeAttr(activeImg.url)}" />`
+      : `<div class="modal-char-img is-placeholder"><span>${escapeHtml(firstChar(char.name))}</span></div>`;
+
+  const thumbs = imgs.map((img, i) => `
+    <div class="modal-thumb-wrap">
+      <button class="modal-thumb ${i === activeIdx ? "active" : ""}" type="button" data-action="char-select-img" data-char-id="${char.id}" data-idx="${i}"><img src="${escapeAttr(img.url)}" /></button>
+      <button class="modal-thumb-del" type="button" data-action="delete-char-image" data-char-id="${char.id}" data-img-id="${img.id}">×</button>
+    </div>`).join("");
+
+  return `
+    <div class="modal-backdrop">
+      <section class="modal modal-char-edit">
+        <header class="modal-head">
+          <h3>${escapeHtml(char.name)}</h3>
+          <button class="icon-button" data-action="close-modal">×</button>
+        </header>
+        <div class="modal-body modal-char-body">
+          <div class="modal-char-img-col">
+            ${imgMain}
+            ${imgs.length ? `<div class="modal-char-thumbs">${thumbs}</div>` : ""}
+            <div class="char-img-btns" style="margin-top:10px">
+              <button class="ghost-button" type="button" data-action="generate-char-image" data-char-id="${char.id}"${isImgGen ? " disabled" : ""}>✦ 生成设定图</button>
+              <label class="ghost-button char-upload-label">↑ 上传<input type="file" accept="image/*" data-action="upload-char-image" data-char-id="${char.id}" style="display:none"></label>
+            </div>
+          </div>
+          <div class="modal-char-fields-col">
+            <div class="char-edit-field">
+              <label class="field-title">姓名</label>
+              <input class="small-input" data-character-field="name" data-id="${char.id}" value="${escapeAttr(char.name)}" />
+            </div>
+            <div class="char-edit-field">
+              <label class="field-title">性别</label>
+              <div class="chip-line">
+                ${["男", "女", "其他"].map((g) => `<button class="role-chip ${char.gender === g ? "hot" : ""}" type="button" data-action="set-character-gender" data-id="${char.id}" data-value="${g}">${g}</button>`).join("")}
+              </div>
+            </div>
+            <div class="char-edit-row2">
+              <div class="char-edit-field">
+                <label class="field-title">年龄</label>
+                <input class="small-input" data-character-field="age" data-id="${char.id}" value="${escapeAttr(char.age || "")}" />
+              </div>
+              <div class="char-edit-field">
+                <label class="field-title">角色定位</label>
+                <select class="small-select" data-character-field="role" data-id="${char.id}">
+                  ${["主角", "女主", "反派", "配角", "导师", "其他"].map((r) => `<option ${char.role === r ? "selected" : ""}>${r}</option>`).join("")}
+                </select>
+              </div>
+            </div>
+            <div class="char-edit-field">
+              <label class="field-title">性格特征</label>
+              <input class="small-input" data-character-field="personalityText" data-id="${char.id}" value="${escapeAttr((char.personality || []).join("、"))}" />
+            </div>
+            <div class="char-edit-field">
+              <label class="field-title">人物小传</label>
+              <textarea data-character-field="biography" data-id="${char.id}">${escapeHtml(char.biography || "")}</textarea>
+            </div>
+            <div class="char-edit-field">
+              <label class="field-title">外貌设定</label>
+              <textarea data-character-field="appearance" data-id="${char.id}">${escapeHtml(char.appearance || "")}</textarea>
+            </div>
+            <div class="char-edit-field">
+              <label class="field-title">人物背景</label>
+              <textarea data-character-field="background" data-id="${char.id}">${escapeHtml(char.background || "")}</textarea>
+              ${renderCharBgChat(char)}
+            </div>
+            <button class="danger-button" style="margin-top:8px" type="button" data-action="delete-character" data-id="${char.id}">删除角色</button>
+          </div>
+        </div>
+      </section>
+    </div>`;
+}
+
+function renderStepFive(script) {
   const isGenerating = state.generation?.active && state.generation.kind === "episodes";
   if (isGenerating) {
     return `
@@ -1133,6 +1304,44 @@ function renderModal() {
       </div>
     `;
   }
+  if (modal.type === "image-preview") {
+    return `
+      <div class="modal-backdrop img-preview-backdrop" data-action="close-modal">
+        <img class="img-preview-full" src="${escapeAttr(modal.url)}" alt="" />
+      </div>`;
+  }
+  if (modal.type === "gen-image-confirm") {
+    return `
+      <div class="modal-backdrop">
+        <section class="modal modal-gen-image">
+          <header class="modal-head"><h3>生成设定图</h3><button class="icon-button" data-action="close-modal">×</button></header>
+          <div class="modal-body gen-image-body">
+            <div class="gen-image-field">
+              <label class="field-title">提示词<span class="muted">（可直接修改）</span></label>
+              <textarea class="gen-prompt-textarea" data-ui="gen-prompt-input">${escapeHtml(modal.prompt || "")}</textarea>
+            </div>
+            <div class="gen-image-field">
+              <label class="field-title">生成模型</label>
+              <select data-ui="gen-model-select" class="small-select" style="width:100%">
+                <option value="wan2.7-image-pro" ${modal.model === "wan2.7-image-pro" ? "selected" : ""}>万象 2.7 Pro（推荐）</option>
+                <option value="wan2.7-image" ${modal.model === "wan2.7-image" ? "selected" : ""}>万象 2.7</option>
+                <option value="gpt-image-2" ${modal.model === "gpt-image-2" ? "selected" : ""}>GPT Image 2</option>
+              </select>
+            </div>
+          </div>
+          <footer class="modal-actions">
+            <button class="ghost-button" data-action="close-modal">取消</button>
+            <button class="primary-button" data-action="confirm-gen-image">✦ 开始生成</button>
+          </footer>
+        </section>
+      </div>`;
+  }
+  if (modal.type === "char-edit") {
+    const script = activeScript();
+    const char = script?.characters.find((c) => c.id === modal.charId);
+    if (!char) return "";
+    return renderCharEditModal(char);
+  }
   if (modal.type === "versions") {
     const script = activeScript();
     const versions = collectVersions(script);
@@ -1274,7 +1483,7 @@ function onClick(event) {
   }
 
   if (action === "close-modal") {
-    state.modal = null;
+    state.modal = state.modal?.prevModal || null;
     renderPortal();
   }
 
@@ -1321,7 +1530,24 @@ function onClick(event) {
     render();
   }
 
-  if (action === "generate-outline" || action === "regenerate-outline") {
+  if (action === "generate-outline") {
+    runGeneration("outline");
+  }
+
+  if (action === "regenerate-outline") {
+    state.showOutlineRegen = !state.showOutlineRegen;
+    render();
+  }
+
+  if (action === "cancel-outline-regen") {
+    state.showOutlineRegen = false;
+    render();
+  }
+
+  if (action === "confirm-outline-regen") {
+    const input = document.querySelector('[data-ui="outline-regen-input"]')?.value.trim();
+    state.outlineRegenContext = input || "";
+    state.showOutlineRegen = false;
     runGeneration("outline");
   }
 
@@ -1410,6 +1636,7 @@ function onClick(event) {
 
   if (action === "confirm-outline" && script) {
     script.currentStep = 3;
+    script.maxStep = Math.max(script.maxStep || 1, 3);
     persist();
     render();
   }
@@ -1454,8 +1681,50 @@ function onClick(event) {
 
   if (action === "confirm-worldbuilding" && script) {
     script.currentStep = 4;
+    script.maxStep = Math.max(script.maxStep || 1, 4);
     persist();
     render();
+    runGeneration("characters");
+  }
+
+  if (action === "send-char-bg-chat" && script) {
+    if (state.generation?.active) return;
+    const charId = button.dataset.charId;
+    const char = script.characters.find((c) => c.id === charId);
+    if (!char) return;
+    const textarea = document.querySelector(`[data-ui="char-bg-input"][data-char-id="${charId}"]`);
+    const text = textarea?.value.trim();
+    if (!text) return;
+    char.bgConversation = char.bgConversation || [];
+    char.bgConversation.push({ id: uid(), role: "user", content: text });
+    generationRun += 1;
+    const runId = generationRun;
+    state.generation = { active: true, kind: `char-bg-${charId}`, text: "" };
+    if (textarea) textarea.value = "";
+    persist();
+    render();
+    genCharBgChat(script, char, runId).catch((err) => {
+      console.error("char-bg-chat error:", err);
+      toast("对话失败，请重试。");
+      state.generation = null;
+      render();
+    });
+  }
+
+  if (action === "apply-char-bg-refine" && script) {
+    const charId = button.dataset.charId;
+    const char = script.characters.find((c) => c.id === charId);
+    if (!char) return;
+    generationRun += 1;
+    const runId = generationRun;
+    state.generation = { active: true, kind: `char-bg-apply-${charId}`, text: "" };
+    render();
+    genCharBgApply(script, char, runId).catch((err) => {
+      console.error("char-bg-apply error:", err);
+      toast("生成失败，请重试。");
+      state.generation = null;
+      render();
+    });
   }
 
   if (action === "send-outline-refine" && script) {
@@ -1479,6 +1748,56 @@ function onClick(event) {
     });
   }
 
+  if (action === "preview-image") {
+    const prevModal = state.modal;
+    state.modal = { type: "image-preview", url: button.dataset.url, prevModal };
+    renderPortal();
+  }
+
+  if (action === "open-char-edit" && script) {
+    state.modal = { type: "char-edit", charId: button.dataset.charId };
+    renderPortal();
+  }
+
+  if (action === "char-select-img" && script) {
+    const char = script.characters.find((c) => c.id === button.dataset.charId);
+    if (char) char._activeImgIdx = Number(button.dataset.idx);
+    render();
+  }
+
+  if (action === "generate-char-image" && script) {
+    const char = script.characters.find((c) => c.id === button.dataset.charId);
+    if (char && !char._imgGenerating) {
+      const prevModal = state.modal?.type === "char-edit" ? state.modal : null;
+      state.modal = { type: "gen-image-confirm", charId: char.id, prompt: char._genPrompt || char.appearance || "", model: "wan2.7-image-pro", prevModal };
+      renderPortal();
+    }
+  }
+
+  if (action === "confirm-gen-image" && script) {
+    const modal = state.modal;
+    const char = script.characters.find((c) => c.id === modal?.charId);
+    const prompt = document.querySelector('[data-ui="gen-prompt-input"]')?.value.trim() || modal?.prompt || "";
+    const model = document.querySelector('[data-ui="gen-model-select"]')?.value || modal?.model || "wan2.7-image-pro";
+    state.modal = state.modal?.prevModal || null;
+    renderPortal();
+    if (char) {
+      generateCharImage(script, char, prompt, model).catch((err) => {
+        console.error("image gen error:", err);
+        toast("图片生成失败，请重试。");
+        char._imgGenerating = false;
+        render();
+      });
+    }
+  }
+
+  if (action === "delete-char-image" && script) {
+    const char = script.characters.find((c) => c.id === button.dataset.charId);
+    if (char) {
+      deleteCharImage(script, char, button.dataset.imgId).catch(() => toast("删除失败，请重试。"));
+    }
+  }
+
   if (action === "generate-characters") {
     runGeneration("characters");
   }
@@ -1491,9 +1810,12 @@ function onClick(event) {
       age: "25",
       role: "配角",
       personality: ["待定"],
-      biography: "补充角色背景、身份与核心动机。",
+      biography: "",
       appearance: "",
       background: "",
+      images: [],
+      bgConversation: [],
+      _bgRefineReady: false,
     });
     markDownstream(script, 3);
     scheduleSave();
@@ -1502,6 +1824,7 @@ function onClick(event) {
 
   if (action === "delete-character" && script) {
     script.characters = script.characters.filter((item) => item.id !== button.dataset.id);
+    if (state.modal?.type === "char-edit") state.modal = null;
     markDownstream(script, 3);
     scheduleSave();
     render();
@@ -1539,6 +1862,7 @@ function onClick(event) {
 
   if (action === "enter-writing" && script) {
     script.currentStep = 6;
+    script.maxStep = Math.max(script.maxStep || 1, 6);
     updateCompletion(script, 85);
     ensureEpisodeSelection(script);
     scheduleSave();
@@ -1701,6 +2025,129 @@ function scrollWbToBottom() {
   });
 }
 
+async function generateCharImage(script, char, prompt, model = "wan2.7-image-pro") {
+  char._imgGenerating = true;
+  render();
+  const res = await fetch(`/api/project/${script.id}/characters/${char.id}/generate-image`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ prompt: prompt || char._genPrompt || char.appearance || char.name, model }),
+  });
+  if (!res.ok) throw new Error(`generate-image: ${res.status}`);
+  const { url, imgId } = await res.json();
+  char.images = char.images || [];
+  char.images.push({ id: imgId, url });
+  char._activeImgIdx = char.images.length - 1;
+  char._imgGenerating = false;
+  persist();
+  render();
+}
+
+async function uploadCharImage(script, char, file) {
+  const form = new FormData();
+  form.append("file", file);
+  const res = await fetch(`/api/project/${script.id}/characters/${char.id}/upload-image`, {
+    method: "POST",
+    body: form,
+  });
+  if (!res.ok) throw new Error(`upload-image: ${res.status}`);
+  const { url, imgId } = await res.json();
+  char.images = char.images || [];
+  char.images.push({ id: imgId, url });
+  char._activeImgIdx = char.images.length - 1;
+  persist();
+  render();
+}
+
+async function deleteCharImage(script, char, imgId) {
+  await fetch(`/api/project/${script.id}/characters/${char.id}/images/${imgId}`, { method: "DELETE" });
+  char.images = (char.images || []).filter((img) => img.id !== imgId);
+  char._activeImgIdx = Math.max(0, Math.min(char._activeImgIdx || 0, char.images.length - 1));
+  persist();
+  render();
+}
+
+async function genCharBgChat(script, char, runId) {
+  const messages = (char.bgConversation || []).map((m) => ({ role: m.role === "ai" ? "assistant" : "user", content: m.content }));
+  const res = await fetch("/api/refine-character-background", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ charName: char.name, background: char.background || "", messages }),
+  });
+  if (!res.ok) throw new Error(`char-bg-chat: ${res.status}`);
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  const aiMsg = { id: uid(), role: "ai", content: "" };
+  char.bgConversation.push(aiMsg);
+  let buf = "";
+  while (true) {
+    if (runId !== generationRun) { reader.cancel(); return; }
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true });
+    const lines = buf.split("\n");
+    buf = lines.pop();
+    for (const line of lines) {
+      if (!line.startsWith("data:")) continue;
+      try {
+        const evt = JSON.parse(line.slice(5).trim());
+        if (evt.type === "chunk") {
+          aiMsg.content += evt.text;
+          render();
+        } else if (evt.type === "done") {
+          aiMsg.content = aiMsg.content.replace(/BG_READY\s*$/, "").trimEnd();
+          if (aiMsg.content.includes("BG_READY") || evt.text?.includes("BG_READY")) {
+            char._bgRefineReady = true;
+          }
+        }
+      } catch {}
+    }
+  }
+  if (/BG_READY/.test(aiMsg.content)) {
+    aiMsg.content = aiMsg.content.replace(/BG_READY\s*$/, "").trimEnd();
+    char._bgRefineReady = true;
+  }
+  state.generation = null;
+  persist();
+  render();
+}
+
+async function genCharBgApply(script, char, runId) {
+  const messages = (char.bgConversation || []).map((m) => ({ role: m.role === "ai" ? "assistant" : "user", content: m.content }));
+  const res = await fetch("/api/apply-character-background-refine", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ charName: char.name, background: char.background || "", messages }),
+  });
+  if (!res.ok) throw new Error(`char-bg-apply: ${res.status}`);
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let result = "";
+  let buf = "";
+  while (true) {
+    if (runId !== generationRun) { reader.cancel(); return; }
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true });
+    const lines = buf.split("\n");
+    buf = lines.pop();
+    for (const line of lines) {
+      if (!line.startsWith("data:")) continue;
+      try {
+        const evt = JSON.parse(line.slice(5).trim());
+        if (evt.type === "chunk") { result += evt.text; }
+      } catch {}
+    }
+  }
+  char.background = result.trim();
+  char.bgConversation = [];
+  char._bgRefineReady = false;
+  state.generation = null;
+  persist();
+  render();
+  toast(`「${char.name}」人物背景已更新。`);
+}
+
 async function genChat(script, runId) {
   const step1Msgs = (script.aiConversation || []).filter((m) => !m.step || m.step === 1);
   const apiMessages = step1Msgs.map((m) => ({
@@ -1763,13 +2210,18 @@ async function genOutline(script, runId) {
   state.generation.progress = 15;
   render();
 
+  const regenContext = state.outlineRegenContext || "";
+  state.outlineRegenContext = "";
+  const requirements = [script.chatRequirements || "", regenContext ? `【额外要求】${regenContext}` : ""]
+    .filter(Boolean).join("\n\n");
+
   const res = await fetch("/api/outline-plans", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       storyPositioning: { ...script.storyPositioning, name: script.name },
       episodeCount: script.storyPositioning.episodeCount,
-      requirements: script.chatRequirements || "",
+      requirements,
     }),
   });
   if (!res.ok) throw new Error(`outline-plans: ${res.status}`);
@@ -2057,16 +2509,17 @@ async function genWbRefineApply(script, runId) {
 async function genCharacters(script, runId) {
   const plan = selectedPlan(script);
   const outlineText = plan?.content || "";
+  const worldbuilding = script.worldbuilding || "";
 
   if (runId !== generationRun) return;
-  state.generation.text = "AI 正在从大纲中提取角色设定…";
+  state.generation.text = "AI 正在从世界观与大纲中提取角色设定…";
   state.generation.progress = 20;
   render();
 
   const res = await fetch("/api/generate-characters", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ outline: outlineText }),
+    body: JSON.stringify({ worldbuilding }),
   });
   if (!res.ok) throw new Error(`generate-characters: ${res.status}`);
 
@@ -2217,6 +2670,7 @@ function applyGeneratedResult(kind, script, data) {
     script.storyOutline.selectedPlanIndex = 0;
     state.selectedOutlineIds = script.storyOutline.plans.slice(0, 2).map((p) => p.id);
     script.currentStep = 2;
+    script.maxStep = Math.max(script.maxStep || 1, 2);
     updateCompletion(script, 45);
     toast("故事大纲已生成。");
   }
@@ -2240,6 +2694,7 @@ function applyGeneratedResult(kind, script, data) {
     script.worldbuilding = typeof data === "string" ? data : (data.worldbuilding || data.content || "");
     script._worldbuildingEditing = false;
     script.currentStep = 3;
+    script.maxStep = Math.max(script.maxStep || 1, 3);
     updateCompletion(script, 52);
     toast("世界观已生成。");
   }
@@ -2253,21 +2708,26 @@ function applyGeneratedResult(kind, script, data) {
   }
   if (kind === "characters") {
     const roleMap = { protagonist: "主角", antagonist: "反派", supporting: "配角" };
+    const genderMap = { "男": "男", "女": "女" };
     script.characters = (Array.isArray(data) ? data : []).map((c) => ({
       id: `char-${uid()}`,
       name: c.name || "未命名角色",
-      gender: "其他",
+      gender: genderMap[c.gender] || "其他",
       age: c.age || "25",
       role: roleMap[c.role] || "配角",
       personality: typeof c.personality === "string"
         ? c.personality.split(/[、,，]/).map((s) => s.trim()).filter(Boolean)
         : (Array.isArray(c.personality) ? c.personality : []),
-      biography: c.personality || "",
+      biography: c.biography || c.personality || "",
       appearance: c.appearance || "",
-      background: "",
+      background: c.background || "",
+      images: [],
+      bgConversation: [],
+      _bgRefineReady: false,
       _genPrompt: c.genPrompt || "",
     }));
     script.currentStep = 4;
+    script.maxStep = Math.max(script.maxStep || 1, 4);
     updateCompletion(script, 62);
     toast("角色体系已生成。");
   }
@@ -2280,6 +2740,7 @@ function applyGeneratedResult(kind, script, data) {
     });
     state.selectedEpisodeId = script.episodes[0]?.id || "";
     script.currentStep = 5;
+    script.maxStep = Math.max(script.maxStep || 1, 5);
     updateCompletion(script, 80);
     toast("分集规划已生成。");
   }
@@ -2427,6 +2888,7 @@ function restoreVersion(versionId) {
       episode.scriptContent = version.content;
       state.selectedEpisodeId = episode.id;
       script.currentStep = 5;
+      script.maxStep = Math.max(script.maxStep || 1, 5);
     }
   }
   state.modal = null;
@@ -2570,6 +3032,16 @@ function serverSummaryToScript(row) {
   };
 }
 
+function inferMaxStep(step, data, plans, characters) {
+  let max = 1;
+  if ((plans && plans.length > 0) || data.outline) max = Math.max(max, 2);
+  if (data.worldbuilding) max = Math.max(max, 3);
+  if (characters && characters.some((c) => c.name && c.name !== "未命名")) max = Math.max(max, 4);
+  if (data.episodePlans && Object.values(data.episodePlans).some((p) => p.goal || p.conflict || p.hook)) max = Math.max(max, 5);
+  if (data.episodes && Object.keys(data.episodes).length > 0) max = Math.max(max, 6);
+  return max;
+}
+
 function serverProjectToScript(data) {
   const step = phaseToStep(data.phase);
   const roleMap = { protagonist: "主角", antagonist: "反派", supporting: "配角" };
@@ -2630,6 +3102,7 @@ function serverProjectToScript(data) {
     status: "DRAFT",
     completionRate: completion,
     currentStep: step,
+    maxStep: inferMaxStep(step, data, plans, characters),
     createdAt: data.created || "",
     updatedAt: data.updated || "",
     storyPositioning: {
@@ -2663,7 +3136,7 @@ function scriptToServerPayload(script) {
   return {
     id: script.id,
     title: script.name,
-    phase: stepToPhase(script.currentStep),
+    phase: stepToPhase(script.maxStep || script.currentStep),
     requirements: "",
     worldbuilding: script.worldbuilding || "",
     outlinePlans: script.storyOutline.plans.length ? script.storyOutline.plans : undefined,
