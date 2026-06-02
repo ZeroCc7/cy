@@ -1807,19 +1807,73 @@ h3 {
   gap: 12px;
 }
 .ep-script-meta { display: flex; gap: 12px; font-size: 13px; }
-.script-editor {
+.script-view {
   flex: 1;
-  min-height: 0;
-  padding: 16px;
+  min-height: 200px;
+  padding: 20px 24px;
+  border-radius: 8px;
+  border: 1px solid rgba(255,255,255,0.08);
+  background: rgba(0,0,0,0.15);
+  line-height: 1.9;
   font-size: 14px;
+  overflow-y: auto;
+}
+.script-view.script-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 160px;
+}
+.script-view h1 {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--cyan, #27e4f2);
+  margin: 0 0 16px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid rgba(39,228,242,0.15);
+}
+.script-view h2, .script-view h3 {
+  font-size: 13px;
+  font-weight: 600;
+  color: rgba(255,255,255,0.85);
+  margin: 20px 0 6px;
+  letter-spacing: 0.02em;
+}
+.script-view blockquote {
+  margin: 6px 0;
+  padding: 4px 12px;
+  border-left: 3px solid rgba(255,255,255,0.18);
+  color: rgba(255,255,255,0.45);
+  font-style: italic;
+}
+.script-view blockquote p { margin: 0; }
+.script-view hr {
+  border: none;
+  border-top: 1px solid rgba(255,255,255,0.08);
+  margin: 20px 0;
+}
+.script-view strong { color: rgba(255,255,255,0.92); }
+.script-view p { margin: 4px 0; }
+.script-view ul, .script-view ol { padding-left: 20px; }
+.script-view li { margin: 2px 0; }
+.script-editor-textarea {
+  flex: 1;
+  min-height: 400px;
+  padding: 16px;
+  font-size: 13px;
   line-height: 1.8;
   white-space: pre-wrap;
   border-radius: 8px;
   border: 1px solid rgba(255,255,255,0.08);
   background: rgba(0,0,0,0.15);
   outline: none;
+  resize: vertical;
+  width: 100%;
+  box-sizing: border-box;
+  color: inherit;
+  font-family: inherit;
 }
-.script-editor:focus { border-color: rgba(39,228,242,0.2); }
+.script-editor-textarea:focus { border-color: rgba(39,228,242,0.2); }
 
 /* ── 集卡片状态点 ── */
 .ep-status-dots { display: flex; gap: 3px; margin-left: auto; }
@@ -1832,6 +1886,38 @@ h3 {
   border: 1px solid rgba(255,255,255,0.08);
 }
 .ep-dot.on { background: rgba(39,228,242,0.15); color: #27e4f2; border-color: rgba(39,228,242,0.3); }
+.ep-dot.summary.on { background: rgba(168,85,247,0.15); color: #a855f7; border-color: rgba(168,85,247,0.3); }
+
+/* ── 本集摘要栏 ── */
+.ep-summary-bar {
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 8px;
+  background: rgba(0,0,0,0.12);
+  overflow: hidden;
+}
+.ep-summary-toggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 14px;
+  background: none;
+  border: none;
+  color: rgba(255,255,255,0.55);
+  font-size: 12px;
+  cursor: pointer;
+  text-align: left;
+}
+.ep-summary-toggle:hover { color: rgba(255,255,255,0.85); background: rgba(255,255,255,0.04); }
+.ep-summary-label { font-weight: 500; letter-spacing: 0.02em; }
+.ep-summary-chevron { font-size: 10px; }
+.ep-summary-body {
+  padding: 10px 16px 14px;
+  font-size: 13px;
+  line-height: 1.75;
+  border-top: 1px solid rgba(255,255,255,0.06);
+  color: rgba(255,255,255,0.75);
+}
 
 .episode-card {
   padding: 10px 12px;

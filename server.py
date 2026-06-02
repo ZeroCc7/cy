@@ -30,6 +30,8 @@ from prompts import (
     EPISODE_PLAN_SYSTEM, EPISODE_PLAN_PROMPT, SINGLE_EPISODE_PLAN_PROMPT,
     REFINE_EP_SYSTEM, APPLY_EP_SYSTEM, APPLY_EP_PROMPT,
     REFINE_SCRIPT_SYSTEM, APPLY_SCRIPT_SYSTEM, APPLY_SCRIPT_PROMPT,
+    EPISODE_SUMMARY_PROMPT,
+    OUTLINE_FROM_WB_SYSTEM, OUTLINE_FROM_WB_PROMPT,
 )
 
 load_dotenv()
@@ -54,6 +56,31 @@ db: Client = create_client(
 )
 
 app = FastAPI()
+
+
+# ── Helpers ──────────────────────────────────────────────────────────────────
+
+def build_wb_char_sections(body: dict):
+    worldbuilding = body.get("worldbuilding", "").strip()
+    characters    = body.get("characters", "").strip()
+    return (
+        f"\n【世界观设定】\n{worldbuilding}\n" if worldbuilding else "",
+        f"\n【主要角色】\n{characters}\n" if characters else "",
+    )
+
+def build_prev_section(previous_episodes: list) -> str:
+    if not previous_episodes:
+        return ""
+    parts = []
+    for ep in previous_episodes:
+        header = f"第{ep['episode_num']}集《{ep.get('title', '')}》"
+        if ep.get("summary"):
+            parts.append(f"{header}\n{ep['summary']}")
+        else:
+            content = ep.get("content", "")
+            excerpt = content[:600] + ("…（略）" if len(content) > 600 else "")
+            parts.append(f"{header}\n{excerpt}")
+    return "\n【前情回顾】\n" + "\n\n".join(parts) + "\n"
 
 
 # ── SSE ──────────────────────────────────────────────────────────────────────
@@ -178,7 +205,9 @@ async def episode(req: Request):
     body      = await req.json()
     ol_text   = body.get("outline", "")
     ep_num    = body.get("episode_num", 1)
-    ep_plan   = body.get("episode_plan")  # optional structured plan dict
+    ep_plan   = body.get("episode_plan")
+    worldbuilding = body.get("worldbuilding", "").strip()
+    characters    = body.get("characters", "").strip()
     ep_list   = extract_episode_outlines(ol_text)
     ep_ol     = ep_list[ep_num - 1] if ep_num <= len(ep_list) else f"第{ep_num}集"
     if ep_plan:
@@ -189,12 +218,48 @@ async def episode(req: Request):
             f"主要冲突：{ep_plan.get('conflict','')}\n"
             f"结尾钩子：{ep_plan.get('hook','')}"
         )
+    prev_section = build_prev_section(body.get("previous_episodes", []))
     wpm    = 200
+    wb_section   = f"\n【世界观设定】\n{worldbuilding}\n" if worldbuilding else ""
+    char_section = f"\n【主要角色】\n{characters}\n" if characters else ""
     prompt = EPISODE_PROMPT.format(
         episode_num=ep_num, outline=ol_text, episode_outline=ep_ol,
         duration_min=1, duration_max=3, word_count_min=wpm, word_count_max=3 * wpm,
+        worldbuilding_section=wb_section, characters_section=char_section,
+        previous_episodes_section=prev_section,
     )
     return sse_stream(EPISODE_SYSTEM, [{"role": "user", "content": prompt}], max_tokens=3000)
+
+
+@app.post("/api/summarize-episode")
+async def summarize_episode(req: Request):
+    body   = await req.json()
+    prompt = EPISODE_SUMMARY_PROMPT.format(
+        episode_num=body.get("episode_num", 1),
+        title=body.get("title", ""),
+        script_content=body.get("script_content", ""),
+    )
+    resp = client.chat.completions.create(
+        model=MODEL, max_tokens=700, stream=False,
+        messages=[{"role": "user", "content": prompt}],
+    )
+    summary = resp.choices[0].message.content or ""
+    return JSONResponse({"summary": summary})
+
+
+@app.post("/api/outline-from-worldbuilding")
+async def outline_from_worldbuilding(req: Request):
+    body         = await req.json()
+    outline      = body.get("outline", "")
+    worldbuilding = body.get("worldbuilding", "")
+    characters   = body.get("characters", "").strip()
+    char_section = f"\n【主要角色】\n{characters}\n" if characters else ""
+    prompt = OUTLINE_FROM_WB_PROMPT.format(
+        outline=outline,
+        worldbuilding=worldbuilding,
+        characters_section=char_section,
+    )
+    return sse_stream(OUTLINE_FROM_WB_SYSTEM, [{"role": "user", "content": prompt}], max_tokens=2000)
 
 
 @app.post("/api/refine")
@@ -543,7 +608,11 @@ async def generate_episode_plans(pid: str, req: Request):
     body = await req.json()
     outline = body.get("outline", "")
     episode_count = body.get("episode_count", 15)
-    prompt = EPISODE_PLAN_PROMPT.format(outline=outline, episode_count=episode_count)
+    wb_section, char_section = build_wb_char_sections(body)
+    prompt = EPISODE_PLAN_PROMPT.format(
+        outline=outline, episode_count=episode_count,
+        worldbuilding_section=wb_section, characters_section=char_section,
+    )
     resp = client.chat.completions.create(
         model=MODEL, max_tokens=4096, stream=False,
         messages=[
@@ -560,7 +629,16 @@ async def generate_episode_plans(pid: str, req: Request):
 async def generate_single_episode_plan(pid: str, ep_num: int, req: Request):
     body = await req.json()
     outline = body.get("outline", "")
-    prompt = SINGLE_EPISODE_PLAN_PROMPT.format(ep_num=ep_num, outline=outline)
+    wb_section, char_section = build_wb_char_sections(body)
+    neighbor_plans = body.get("neighborPlans", {})
+    neighbor_lines = [f"第{k}集：{v.get('title','')} / 目标：{v.get('goal','')} / 钩子：{v.get('hook','')}"
+                      for k, v in neighbor_plans.items()]
+    neighbor_section = ("\n【相邻集规划参考】\n" + "\n".join(neighbor_lines) + "\n") if neighbor_lines else ""
+    prompt = SINGLE_EPISODE_PLAN_PROMPT.format(
+        ep_num=ep_num, outline=outline,
+        worldbuilding_section=wb_section, characters_section=char_section,
+        neighbor_section=neighbor_section,
+    )
     resp = client.chat.completions.create(
         model=MODEL, max_tokens=512, stream=False,
         messages=[
@@ -659,12 +737,15 @@ async def refine_episode(req: Request):
     body       = await req.json()
     ep_num     = body.get("epNum", 1)
     messages   = body.get("messages", [])
+    wb_section, char_section = build_wb_char_sections(body)
     system     = REFINE_EP_SYSTEM.format(
         ep_num=ep_num,
         ep_title=body.get("title", ""),
         ep_goal=body.get("goal", ""),
         ep_conflict=body.get("conflict", ""),
         ep_hook=body.get("hook", ""),
+        worldbuilding_section=wb_section,
+        characters_section=char_section,
     )
     return sse_stream(system, messages, max_tokens=800)
 
@@ -676,12 +757,16 @@ async def refine_script(req: Request):
     script_text   = body.get("scriptContent", "")
     preview       = script_text[:800] + ("…" if len(script_text) > 800 else "")
     messages      = body.get("messages", [])
+    worldbuilding = body.get("worldbuilding", "").strip()
+    characters    = body.get("characters", "").strip()
     system        = REFINE_SCRIPT_SYSTEM.format(
         ep_num=ep_num,
         ep_goal=body.get("goal", ""),
         ep_conflict=body.get("conflict", ""),
         ep_hook=body.get("hook", ""),
         script_preview=preview or "（暂无正文）",
+        worldbuilding_section=f"\n世界观：{worldbuilding}\n" if worldbuilding else "",
+        characters_section=f"\n主要角色：\n{characters}\n" if characters else "",
     )
     return sse_stream(system, messages, max_tokens=1000)
 
@@ -692,6 +777,9 @@ async def apply_script_refine(req: Request):
     ep_num       = body.get("epNum", 1)
     script_text  = body.get("scriptContent", "")
     messages     = body.get("messages", [])
+    worldbuilding = body.get("worldbuilding", "").strip()
+    characters    = body.get("characters", "").strip()
+    prev_section = build_prev_section(body.get("previous_episodes", []))
     conv_text    = "\n".join(f"{'用户' if m['role']=='user' else 'AI'}：{m['content']}" for m in messages)
     prompt       = APPLY_SCRIPT_PROMPT.format(
         ep_num=ep_num,
@@ -700,6 +788,9 @@ async def apply_script_refine(req: Request):
         ep_hook=body.get("hook", ""),
         script_content=script_text or "（暂无正文）",
         conv_text=conv_text,
+        worldbuilding_section=f"\n【世界观设定】\n{worldbuilding}\n" if worldbuilding else "",
+        characters_section=f"\n【主要角色】\n{characters}\n" if characters else "",
+        previous_episodes_section=prev_section,
     )
     return sse_stream(APPLY_SCRIPT_SYSTEM, [{"role": "user", "content": prompt}], max_tokens=4000)
 
@@ -709,6 +800,7 @@ async def apply_episode_refine(req: Request):
     body       = await req.json()
     ep_num     = body.get("epNum", 1)
     messages   = body.get("messages", [])
+    wb_section, char_section = build_wb_char_sections(body)
     conv_text  = "\n".join(f"{'用户' if m['role']=='user' else 'AI'}：{m['content']}" for m in messages)
     prompt     = APPLY_EP_PROMPT.format(
         ep_num=ep_num,
@@ -717,6 +809,8 @@ async def apply_episode_refine(req: Request):
         ep_conflict=body.get("conflict", ""),
         ep_hook=body.get("hook", ""),
         conv_text=conv_text,
+        worldbuilding_section=wb_section,
+        characters_section=char_section,
     )
     return sse_stream(APPLY_EP_SYSTEM, [{"role": "user", "content": prompt}], max_tokens=500)
 
@@ -726,7 +820,11 @@ async def episode_plans_standalone(req: Request):
     body          = await req.json()
     outline       = body.get("outline", "")
     episode_count = body.get("episodeCount", 10)
-    prompt = EPISODE_PLAN_PROMPT.format(outline=outline, episode_count=episode_count)
+    wb_section, char_section = build_wb_char_sections(body)
+    prompt = EPISODE_PLAN_PROMPT.format(
+        outline=outline, episode_count=episode_count,
+        worldbuilding_section=wb_section, characters_section=char_section,
+    )
     resp = client.chat.completions.create(
         model=MODEL, max_tokens=4096, stream=False,
         messages=[

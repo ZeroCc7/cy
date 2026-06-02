@@ -106,11 +106,10 @@ EPISODE_SYSTEM = """你是一位专业短视频剧本编剧。你创作的剧本
 - 控制在指定时长内（每分钟约200字旁白/对白）
 - 每个场景都有明确的情绪目标"""
 
-EPISODE_PROMPT = """根据以下故事大纲，为第{episode_num}集创作详细剧本。
+EPISODE_PROMPT = """根据以下素材，为第{episode_num}集创作详细剧本。
 
 【故事大纲】
-{outline}
-
+{outline}{worldbuilding_section}{characters_section}{previous_episodes_section}
 【本集大纲】
 {episode_outline}
 
@@ -184,11 +183,10 @@ EPISODE_PLAN_SYSTEM = (
     "只输出 JSON，不输出任何说明文字。"
 )
 
-EPISODE_PLAN_PROMPT = """请根据以下故事大纲，为全 {episode_count} 集生成结构化分集规划。
+EPISODE_PLAN_PROMPT = """请根据以下素材，为全 {episode_count} 集生成结构化分集规划。
 
 【故事大纲】
-{outline}
-
+{outline}{worldbuilding_section}{characters_section}
 输出 JSON 对象，键为集数字符串（"1"、"2"……），每集包含：
 - title：本集标题，10字内，吸引眼球
 - goal：本集目标，本集推进了哪条主线/支线，25字内
@@ -203,11 +201,10 @@ EPISODE_PLAN_PROMPT = """请根据以下故事大纲，为全 {episode_count} �
 
 直接输出 JSON 对象本身，不加说明，不加 ```json 标记。"""
 
-SINGLE_EPISODE_PLAN_PROMPT = """请根据以下故事大纲，重新规划第 {ep_num} 集的内容。
+SINGLE_EPISODE_PLAN_PROMPT = """请根据以下素材，重新规划第 {ep_num} 集的内容。
 
 【故事大纲】
-{outline}
-
+{outline}{worldbuilding_section}{characters_section}{neighbor_section}
 输出第 {ep_num} 集的 JSON 对象（非数组，无外层包裹）：
 {{
   "title": "本集标题，10字内",
@@ -227,7 +224,7 @@ REFINE_EP_SYSTEM = """你是专业短剧分集规划顾问，正在帮助用户�
 目标：{ep_goal}
 冲突：{ep_conflict}
 钩子：{ep_hook}
-
+{characters_section}{worldbuilding_section}
 根据用户想法给出具体建议，探讨情节走向、冲突设计和结尾悬念。如果用户已满意，在回复末尾单独一行写：
 EP_READY"""
 
@@ -240,7 +237,7 @@ APPLY_EP_PROMPT = """根据以下讨论，重新规划第 {ep_num} 集。
 目标：{ep_goal}
 冲突：{ep_conflict}
 钩子：{ep_hook}
-
+{characters_section}{worldbuilding_section}
 【讨论记录】
 {conv_text}
 
@@ -255,12 +252,23 @@ REFINE_SCRIPT_SYSTEM = """你是专业短剧编剧顾问，正在帮助用户修
 目标：{ep_goal}
 冲突：{ep_conflict}
 钩子：{ep_hook}
-
+{characters_section}{worldbuilding_section}
 当前正文（节选）：
 {script_preview}
 
 根据用户的修改意见给出具体建议，可以指出问题、提供改写思路或直接示例。如果用户已满意，在回复末尾单独一行写：
 SCRIPT_READY"""
+
+EPISODE_SUMMARY_PROMPT = """为以下短剧集正文提取结构化剧情摘要，不超过500字，直接输出摘要，不加任何说明。
+
+第{episode_num}集《{title}》正文：
+{script_content}
+
+按以下结构输出：
+**关键事件**：本集核心剧情（2-4条）
+**角色变化**：人物状态、关系、认知的变化
+**未解悬念**：留给后续集的线索或伏笔
+**结尾状态**：本集结束时的场景与各主角处境"""
 
 APPLY_SCRIPT_SYSTEM = """你是专业短剧编剧，根据修改讨论重新输出本集完整正文。保持短剧格式，直接输出正文，不加任何说明。"""
 
@@ -270,7 +278,7 @@ APPLY_SCRIPT_PROMPT = """根据以下讨论，修改并输出第 {ep_num} 集的
 目标：{ep_goal}
 冲突：{ep_conflict}
 钩子：{ep_hook}
-
+{characters_section}{worldbuilding_section}{previous_episodes_section}
 【原始正文】
 {script_content}
 
@@ -435,6 +443,29 @@ APPLY_OUTLINE_REFINE_PROMPT = """【原始大纲】
 {conv_text}
 
 请根据以上讨论，生成一个完整的优化大纲："""
+
+# ── 基于世界观重新生成大纲 ───────────────────────────────────────────────────
+
+OUTLINE_FROM_WB_SYSTEM = (
+    "你是专业短剧策划编剧，擅长将世界观设定与故事大纲深度融合，"
+    "让剧情冲突、人物命运与世界规则紧密咬合。直接输出大纲正文，不加任何说明。"
+)
+
+OUTLINE_FROM_WB_PROMPT = """请基于以下世界观设定，对原始故事大纲进行深度优化，输出一个与世界观高度融合的新版大纲。
+
+【原始大纲】
+{outline}
+
+【世界观设定】
+{worldbuilding}
+{characters_section}
+优化要求：
+1. 让故事冲突与世界规则直接挂钩（如力量体系、势力格局、禁忌法则）
+2. 人物的选择和成长弧线需符合世界观背景
+3. 保留原始大纲的核心起承转合，在细节和逻辑上与世界观对齐
+4. 输出格式与原始大纲保持一致
+
+直接输出优化后的完整大纲："""
 
 # ── 世界观精炼对话 ────────────────────────────────────────────────────────────
 

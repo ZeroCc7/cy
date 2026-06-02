@@ -327,6 +327,7 @@ function makeEpisode(num, title, goal, conflict, hook) {
     conflict,
     hook,
     scriptContent: "",
+    summary: "",
     versions: [],
     alternateVersions: [],
     needsUpdate: false,
@@ -710,10 +711,13 @@ function renderTagSection(kicker, title, key, selected) {
 }
 
 function renderStepTwo(script) {
-  const isGenerating = state.generation?.active && state.generation.kind === "outline";
+  const isGenerating = state.generation?.active && (state.generation.kind === "outline" || state.generation.kind === "outline-from-worldbuilding");
   if (isGenerating) {
+    const subtitle = state.generation.kind === "outline-from-worldbuilding"
+      ? "AI 正在将世界观与大纲深度融合，生成新版方案…"
+      : "AI 正在梳理起承转合、核心冲突与反转节奏。";
     return `
-      ${renderStepHead(2, "生成故事大纲", "AI 正在梳理起承转合、核心冲突与反转节奏。", `<button class="ghost-button" type="button" data-action="stop-generation">停止生成</button>`)}
+      ${renderStepHead(2, "生成故事大纲", subtitle, `<button class="ghost-button" type="button" data-action="stop-generation">停止生成</button>`)}
       <section class="panel panel-pad">${renderStreamState()}</section>
     `;
   }
@@ -746,7 +750,8 @@ function renderStepTwo(script) {
                 ? `<button class="ghost-button" type="button" data-action="cancel-outline-regen">取消</button>
                    <button class="primary-button violet" type="button" data-action="confirm-outline-regen">开始生成</button>`
                 : `<button class="ghost-button violet" type="button" data-action="regenerate-outline">↻ 重新生成</button>
-                   ${state.outlineTab === "plans" ? `<button class="ghost-button cyan" type="button" data-action="merge-outline" ${plans.length ? "" : "disabled"}>AI 融合方案</button>` : ""}`
+                   ${state.outlineTab === "plans" ? `<button class="ghost-button cyan" type="button" data-action="merge-outline" ${plans.length ? "" : "disabled"}>AI 融合方案</button>` : ""}
+                   ${script.worldbuilding ? `<button class="ghost-button" type="button" data-action="outline-from-worldbuilding" title="以世界观为基础，优化当前大纲并追加为新方案">🌐 世界观优化</button>` : ""}`
               }
             </div>
           </div>
@@ -1174,6 +1179,7 @@ function renderEpisodeCard(ep) {
         <span class="ep-status-dots">
           <span class="ep-dot ${hasPlan ? "on" : ""}" title="规划">规</span>
           <span class="ep-dot ${hasScript ? "on" : ""}" title="正文">稿</span>
+          <span class="ep-dot ${ep.summary ? "on summary" : ""}" title="${ep.summary ? "已生成摘要" : "暂无摘要"}">摘</span>
         </span>
       </div>
       <p class="ep-card-title">${escapeHtml(hasPlan ? ep.title : "未规划")}</p>
@@ -1246,8 +1252,24 @@ function renderEpPlanTab(ep, script, busy) {
 function renderEpScriptTab(ep, script, busy) {
   const isGenScript  = state.generation?.active && state.generation.kind === "script";
   const isApplying   = state.generation?.active && state.generation.kind === `script-refine-apply-${ep.id}`;
-  const editorText   = isGenScript ? state.generation.text : ep.scriptContent;
   const wordCount    = (ep.scriptContent || "").replace(/\s/g, "").length;
+
+  let contentArea;
+  if (isGenScript) {
+    contentArea = `
+      <div class="script-view md-content">${renderMd(state.generation.text || "…")}<span class="chat-cursor"></span></div>
+      <div class="progress-line"><span style="width:${state.generation.progress}%"></span></div>`;
+  } else if (ep._scriptEditing) {
+    contentArea = `<textarea class="script-editor-textarea" data-script-textarea data-ep-id="${ep.id}">${escapeHtml(ep.scriptContent || "")}</textarea>`;
+  } else if (ep.scriptContent) {
+    contentArea = `<div class="script-view md-content">${renderMd(ep.scriptContent)}</div>`;
+  } else {
+    contentArea = `<div class="script-view script-empty"><p class="muted">点击「生成正文」开始创作本集剧本</p></div>`;
+  }
+
+  const toggleBtn = ep.scriptContent && !isGenScript
+    ? `<button class="ghost-button" type="button" data-action="toggle-script-edit" data-ep-id="${ep.id}" style="font-size:12px;padding:3px 10px">${ep._scriptEditing ? "预览" : "编辑"}</button>`
+    : "";
 
   const scMsgs    = ep.scriptConversation || [];
   const canApply  = scMsgs.length > 0 && !busy;
@@ -1256,6 +1278,16 @@ function renderEpScriptTab(ep, script, busy) {
       <div class="chat-avatar">${m.role === "user" ? "我" : "AI"}</div>
       <div class="chat-text md-content">${m.role === "user" ? escapeHtml(m.content) : renderMd(m.content)}</div>
     </div>`).join("");
+
+  const summaryOpen = state.scriptSummaryOpen?.[ep.id];
+  const summaryBar = ep.summary ? `
+    <div class="ep-summary-bar">
+      <button class="ep-summary-toggle" type="button" data-action="toggle-script-summary" data-ep-id="${ep.id}">
+        <span class="ep-summary-label">▸ 本集摘要</span>
+        <span class="ep-summary-chevron">${summaryOpen ? "▴" : "▾"}</span>
+      </button>
+      ${summaryOpen ? `<div class="ep-summary-body md-content">${renderMd(ep.summary)}</div>` : ""}
+    </div>` : "";
 
   return `
     <div class="ep-script-layout">
@@ -1266,13 +1298,14 @@ function renderEpScriptTab(ep, script, busy) {
             ${wordCount ? `<span>${wordCount} 字</span>` : ""}
           </div>
           <div class="chip-line">
+            ${toggleBtn}
             <button class="primary-button" type="button" data-action="generate-episode-script"${busy ? " disabled" : ""}>${ep.scriptContent ? "↻ 重新生成" : "✳ 生成正文"}</button>
             ${ep.scriptContent ? `<button class="ghost-button" type="button" data-action="save-version">▤ 版本</button>` : ""}
             ${isGenScript ? `<button class="ghost-button" type="button" data-action="stop-generation">停止</button>` : ""}
           </div>
         </div>
-        <div class="editable script-editor" contenteditable="${busy ? "false" : "true"}" data-script-editor data-placeholder="生成正文后显示在此处，可直接编辑。">${editorText ? formatScriptHtml(editorText) : ""}</div>
-        ${isGenScript ? `<div class="progress-line"><span style="width:${state.generation.progress}%"></span></div>` : ""}
+        ${summaryBar}
+        ${contentArea}
       </div>
       <div class="ep-script-chat wb-chat-panel">
         <div class="panel panel-pad wb-chat-inner">
@@ -1640,6 +1673,10 @@ function onClick(event) {
   if (action === "regenerate-outline") {
     state.showOutlineRegen = !state.showOutlineRegen;
     render();
+  }
+
+  if (action === "outline-from-worldbuilding" && script) {
+    runGeneration("outline-from-worldbuilding");
   }
 
   if (action === "cancel-outline-regen") {
@@ -2076,6 +2113,18 @@ function onClick(event) {
     render();
   }
 
+  if (action === "toggle-script-edit" && script) {
+    const ep = script.episodes.find((e) => e.id === button.dataset.epId);
+    if (ep) { ep._scriptEditing = !ep._scriptEditing; render(); }
+  }
+
+  if (action === "toggle-script-summary") {
+    const epId = button.dataset.epId;
+    state.scriptSummaryOpen = state.scriptSummaryOpen || {};
+    state.scriptSummaryOpen[epId] = !state.scriptSummaryOpen[epId];
+    render();
+  }
+
   if (action === "generate-episode-script") {
     runGeneration("script");
   }
@@ -2169,10 +2218,10 @@ function onInput(event) {
     scheduleSave();
   }
 
-  if (target.dataset.scriptEditor !== undefined) {
-    const episode = selectedEpisode(script);
-    if (!episode) return;
-    episode.scriptContent = target.innerText.trim();
+  if (target.dataset.scriptTextarea !== undefined) {
+    const ep = script.episodes.find((e) => e.id === target.dataset.epId);
+    if (!ep) return;
+    ep.scriptContent = target.value;
     updateScriptCompletion(script);
     scheduleSave();
   }
@@ -2196,6 +2245,7 @@ async function runGeneration(kind) {
   render();
   try {
     if (kind === "outline") await genOutline(script, runId);
+    else if (kind === "outline-from-worldbuilding") await genOutlineFromWorldbuilding(script, runId);
     else if (kind === "outline-refine-apply") await genOutlineRefineApply(script, runId);
     else if (kind === "worldbuilding") await genWorldbuilding(script, runId);
     else if (kind === "wb-refine-apply") await genWbRefineApply(script, runId);
@@ -2503,6 +2553,49 @@ async function genOutlineRefine(script, runId) {
   }
 }
 
+async function genOutlineFromWorldbuilding(script, runId) {
+  const plan = selectedPlan(script);
+  const outlineText = plan?.content || script.storyOutline.plans[0]?.content || "";
+  const res = await fetch("/api/outline-from-worldbuilding", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      outline: outlineText,
+      worldbuilding: script.worldbuilding || "",
+      characters: buildCharactersText(script),
+    }),
+  });
+  if (!res.ok) throw new Error(`outline-from-worldbuilding: ${res.status}`);
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let fullText = ""; let buf = "";
+  while (true) {
+    if (runId !== generationRun) { reader.cancel(); return; }
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true });
+    const lines = buf.split("\n"); buf = lines.pop();
+    for (const line of lines) {
+      if (!line.startsWith("data: ")) continue;
+      try {
+        const evt = JSON.parse(line.slice(6));
+        if (evt.type === "chunk") {
+          fullText += evt.text;
+          state.generation.text = fullText;
+          state.generation.progress = Math.min(95, state.generation.progress + 0.3);
+          render();
+        } else if (evt.type === "done") {
+          if (runId !== generationRun) return;
+          applyGeneratedResult("outline-from-worldbuilding", script, evt.full || fullText);
+          state.generation = null;
+          persist();
+          render();
+        }
+      } catch {}
+    }
+  }
+}
+
 async function genOutlineRefineApply(script, runId) {
   const plan = selectedPlan(script);
   const outlineText = plan?.content || script.storyOutline.plans[0]?.content || "";
@@ -2757,6 +2850,8 @@ async function genEpisodes(script, runId) {
     body: JSON.stringify({
       outline: outlineText,
       episodeCount: script.storyPositioning.episodeCount,
+      worldbuilding: script.worldbuilding || "",
+      characters: buildCharactersText(script),
     }),
   });
   if (!res.ok) throw new Error(`episode-plans: ${res.status}`);
@@ -2776,10 +2871,20 @@ async function genEpisodes(script, runId) {
 async function genSingleEpisode(script, ep, runId) {
   const plan = selectedPlan(script);
   const outlineText = plan?.content || "";
+  const neighborPlans = Object.fromEntries(
+    (script.episodes || [])
+      .filter((e) => e.episodeNumber !== ep.episodeNumber && (e.goal || e.hook))
+      .map((e) => [String(e.episodeNumber), { title: e.title, goal: e.goal, hook: e.hook }])
+  );
   const res = await fetch(`/api/project/${script.id}/generate-episode-plan/${ep.episodeNumber}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ outline: outlineText }),
+    body: JSON.stringify({
+      outline: outlineText,
+      worldbuilding: script.worldbuilding || "",
+      characters: buildCharactersText(script),
+      neighborPlans,
+    }),
   });
   if (!res.ok) throw new Error(`gen-ep: ${res.status}`);
   const data = await res.json();
@@ -2800,7 +2905,11 @@ async function genEpChat(script, ep, runId) {
   const res = await fetch("/api/refine-episode", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ epNum: ep.episodeNumber, title: ep.title, goal: ep.goal, conflict: ep.conflict, hook: ep.hook, messages }),
+    body: JSON.stringify({
+      epNum: ep.episodeNumber, title: ep.title, goal: ep.goal, conflict: ep.conflict, hook: ep.hook, messages,
+      worldbuilding: script.worldbuilding || "",
+      characters: buildCharactersText(script),
+    }),
   });
   if (!res.ok) throw new Error(`ep-chat: ${res.status}`);
   const reader = res.body.getReader();
@@ -2836,7 +2945,11 @@ async function genEpRefineApply(script, ep, runId) {
   const res = await fetch("/api/apply-episode-refine", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ epNum: ep.episodeNumber, title: ep.title, goal: ep.goal, conflict: ep.conflict, hook: ep.hook, messages }),
+    body: JSON.stringify({
+      epNum: ep.episodeNumber, title: ep.title, goal: ep.goal, conflict: ep.conflict, hook: ep.hook, messages,
+      worldbuilding: script.worldbuilding || "",
+      characters: buildCharactersText(script),
+    }),
   });
   if (!res.ok) throw new Error(`ep-refine-apply: ${res.status}`);
   const reader = res.body.getReader();
@@ -2869,12 +2982,53 @@ async function genEpRefineApply(script, ep, runId) {
   toast(`第 ${ep.episodeNumber} 集规划已更新。`);
 }
 
+async function genEpisodeSummary(script, ep) {
+  if (!ep.scriptContent) return;
+  try {
+    const res = await fetch("/api/summarize-episode", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        episode_num: ep.episodeNumber,
+        title: ep.title || "",
+        script_content: ep.scriptContent,
+      }),
+    });
+    if (!res.ok) return;
+    const data = await res.json();
+    if (data.summary) {
+      ep.summary = data.summary;
+      persist();
+      render();
+    }
+  } catch {}
+}
+
+function buildPreviousEpisodes(script, currentEpNum) {
+  return (script.episodes || [])
+    .filter((e) => e.episodeNumber < currentEpNum && e.scriptContent)
+    .sort((a, b) => a.episodeNumber - b.episodeNumber)
+    .map((e) => ({ episode_num: e.episodeNumber, title: e.title, summary: e.summary || null, content: e.scriptContent }));
+}
+
+function buildCharactersText(script) {
+  return (script.characters || []).map((c) => {
+    const traits = (c.personality || []).join("、");
+    return [`【${c.name}】${c.role || ""}`, traits && `性格：${traits}`, c.biography, c.appearance && `外貌：${c.appearance}`].filter(Boolean).join(" | ");
+  }).join("\n");
+}
+
 async function genScriptChat(script, ep, runId) {
   const messages = (ep.scriptConversation || []).map((m) => ({ role: m.role === "ai" ? "assistant" : "user", content: m.content }));
   const res = await fetch("/api/refine-script", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ epNum: ep.episodeNumber, goal: ep.goal, conflict: ep.conflict, hook: ep.hook, scriptContent: ep.scriptContent || "", messages }),
+    body: JSON.stringify({
+      epNum: ep.episodeNumber, goal: ep.goal, conflict: ep.conflict, hook: ep.hook,
+      scriptContent: ep.scriptContent || "", messages,
+      worldbuilding: script.worldbuilding || "",
+      characters: buildCharactersText(script),
+    }),
   });
   if (!res.ok) throw new Error(`script-chat: ${res.status}`);
   const reader = res.body.getReader();
@@ -2907,7 +3061,13 @@ async function genScriptRefineApply(script, ep, runId) {
   const res = await fetch("/api/apply-script-refine", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ epNum: ep.episodeNumber, goal: ep.goal, conflict: ep.conflict, hook: ep.hook, scriptContent: ep.scriptContent || "", messages }),
+    body: JSON.stringify({
+      epNum: ep.episodeNumber, goal: ep.goal, conflict: ep.conflict, hook: ep.hook,
+      scriptContent: ep.scriptContent || "", messages,
+      worldbuilding: script.worldbuilding || "",
+      characters: buildCharactersText(script),
+      previous_episodes: buildPreviousEpisodes(script, ep.episodeNumber),
+    }),
   });
   if (!res.ok) throw new Error(`script-refine-apply: ${res.status}`);
   const reader = res.body.getReader();
@@ -2926,7 +3086,14 @@ async function genScriptRefineApply(script, ep, runId) {
   }
   ep.scriptConversation = [];
   ep._scriptRefineReady = false;
-  applyGeneratedResult("script", script, result);
+  ep.scriptContent = result;
+  ep.summary = "";
+  ep._scriptEditing = false;
+  ep.needsUpdate = false;
+  ep.versions = ep.versions || [];
+  ep.versions.unshift({ id: `version-${uid()}`, versionNumber: ep.versions.length + 1, content: result, savedAt: formatDate(new Date()), type: "AUTO" });
+  updateScriptCompletion(script);
+  genEpisodeSummary(script, ep).catch(() => {});
   state.generation = null;
   persist();
   render();
@@ -2940,6 +3107,10 @@ async function genScript(script, runId) {
   const plan = selectedPlan(script);
   const outlineText = plan?.content || "";
 
+  const charactersText = buildCharactersText(script);
+
+  const previousEpisodes = buildPreviousEpisodes(script, episode.episodeNumber);
+
   const res = await fetch("/api/episode", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -2952,6 +3123,9 @@ async function genScript(script, runId) {
         conflict: episode.conflict,
         hook: episode.hook,
       },
+      worldbuilding: script.worldbuilding || "",
+      characters: charactersText,
+      previous_episodes: previousEpisodes,
     }),
   });
   if (!res.ok) throw new Error(`episode API: ${res.status}`);
@@ -2980,6 +3154,7 @@ async function genScript(script, runId) {
           finished = true;
           if (runId !== generationRun) return;
           applyGeneratedResult("script", script, evt.full);
+          genEpisodeSummary(script, episode).catch(() => {});
           state.generation = null;
           persist();
           render();
@@ -2992,6 +3167,7 @@ async function genScript(script, runId) {
 function generationMeta(kind) {
   const data = {
     outline: { title: "AI 正在为您构思剧本大纲…", subtitle: "梳理起承转合、核心冲突与反转节奏，生成完整故事骨架" },
+    "outline-from-worldbuilding": { title: "AI 正在融合世界观优化大纲…", subtitle: "将世界规则、势力格局与故事冲突深度绑定，生成新版大纲" },
     "outline-refine-apply": { title: "AI 正在根据讨论重新生成大纲…", subtitle: "结合打磨意见，输出完整优化版大纲方案" },
     worldbuilding: { title: "AI 正在构建故事世界观…", subtitle: "设定时代背景、社会规则、地理势力与独特世界法则" },
     "wb-refine-apply": { title: "AI 正在根据讨论重新生成世界观…", subtitle: "结合打磨意见，输出完整优化版世界观" },
@@ -3057,6 +3233,20 @@ function applyGeneratedResult(kind, script, data) {
     updateCompletion(script, 45);
     toast("精炼版大纲已生成，已自动选中。");
   }
+  if (kind === "outline-from-worldbuilding") {
+    const content = typeof data === "string" ? data : (data.content || "");
+    const newPlan = {
+      id: `plan-${uid()}`,
+      title: `世界观优化版 ${script.storyOutline.plans.length + 1}`,
+      label: "世界观融合",
+      content,
+      generatedAt: formatDate(new Date()),
+    };
+    script.storyOutline.plans.push(newPlan);
+    script.storyOutline.selectedPlanIndex = script.storyOutline.plans.length - 1;
+    updateCompletion(script, 45);
+    toast("世界观优化版大纲已追加，已自动选中。");
+  }
   if (kind === "worldbuilding") {
     script.worldbuilding = typeof data === "string" ? data : (data.worldbuilding || data.content || "");
     script._worldbuildingEditing = false;
@@ -3115,6 +3305,8 @@ function applyGeneratedResult(kind, script, data) {
     const episode = selectedEpisode(script);
     if (!episode) return;
     episode.scriptContent = data;
+    episode.summary = "";
+    episode._scriptEditing = false;
     episode.needsUpdate = false;
     episode.versions = episode.versions || [];
     episode.versions.unshift({
@@ -3350,7 +3542,7 @@ function captureSelection() {
     return;
   }
   const anchor = selection.anchorNode?.parentElement;
-  if (!anchor?.closest?.("[data-script-editor]")) return;
+  if (!anchor?.closest?.("[data-script-editor], .script-view")) return;
   const range = selection.getRangeAt(0);
   const rect = range.getBoundingClientRect();
   state.selection = {
@@ -3451,6 +3643,7 @@ function serverProjectToScript(data) {
     const content = episodesWritten[String(num)] || "";
     const ep = makeEpisode(num, plan.title || `第${num}集`, plan.goal || "", plan.conflict || "", plan.hook || "");
     ep.scriptContent = content;
+    ep.summary = plan.summary || "";
     if (content) {
       ep.versions = [{ id: `version-${uid()}`, versionNumber: 1, content, savedAt: data.updated || "", type: "AUTO" }];
     }
@@ -3535,7 +3728,7 @@ function scriptToServerPayload(script) {
     episodePlans: Object.fromEntries(
       (script.episodes || []).map((e) => [
         String(e.episodeNumber),
-        { title: e.title, goal: e.goal, conflict: e.conflict, hook: e.hook },
+        { title: e.title, goal: e.goal, conflict: e.conflict, hook: e.hook, summary: e.summary || "" },
       ])
     ),
   };
