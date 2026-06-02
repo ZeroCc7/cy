@@ -127,6 +127,14 @@ textarea {
   gap: 9px;
 }
 
+.brand-logo-img {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
 .brand-mark {
   width: 22px;
   height: 22px;
@@ -413,6 +421,17 @@ h3 {
   background: rgba(255, 255, 255, 0.05);
   left: -18px;
   bottom: -18px;
+}
+
+.cover-texture {
+  position: absolute;
+  inset: 0;
+  background-image: url('./images/card-texture.png');
+  background-size: 256px;
+  opacity: 0.09;
+  mix-blend-mode: overlay;
+  z-index: 0;
+  pointer-events: none;
 }
 
 .cover-letter {
@@ -969,6 +988,11 @@ h3 {
   color: #fff;
 }
 
+img.chat-avatar.ai-av {
+  object-fit: cover;
+  background: none;
+}
+
 .chat-text {
   padding: 11px 15px;
   border-radius: 14px;
@@ -1337,6 +1361,14 @@ h3 {
   place-items: center;
   text-align: center;
   padding: 36px;
+}
+
+.empty-illus {
+  display: block;
+  width: 148px;
+  height: auto;
+  margin: 0 auto 4px;
+  opacity: 0.78;
 }
 
 .empty-state h3 {

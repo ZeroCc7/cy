@@ -13,6 +13,7 @@ from datetime import datetime
 from dotenv import load_dotenv
 from fastapi import FastAPI, File, Request, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse, FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 from openai import OpenAI
 from supabase import create_client, Client
 from exporter import save_full_script, extract_episode_outlines
@@ -114,6 +115,8 @@ def sse_stream(system, messages, max_tokens=4000):
 
 
 # ── Static ────────────────────────────────────────────────────────────────────
+
+app.mount("/images", StaticFiles(directory="images"), name="images")
 
 @app.get("/")
 async def index():

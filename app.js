@@ -380,7 +380,7 @@ function renderTopNav() {
     <header class="top-nav">
       <div class="nav-inner">
         <div class="brand">
-          <span class="brand-mark"></span>
+          <img src="./images/logo.png" class="brand-logo-img" alt="幕启" />
           <span class="brand-title">幕启</span>
         </div>
       </div>
@@ -431,7 +431,7 @@ function renderScriptGrid(scripts) {
   if (!scripts.length) {
     const msg = state.search.trim()
       ? `<h3>没有匹配的剧本</h3><p>调整搜索条件试试。</p>`
-      : `<h3>暂无剧本</h3><p>点击右上角「＋ 新建剧本」开始创作。</p>`;
+      : `<img src="./images/empty-scripts.png" class="empty-illus" alt=""><h3>暂无剧本</h3><p>点击右上角「＋ 新建剧本」开始创作。</p>`;
     return `<div class="empty-state"><div>${msg}</div></div>`;
   }
   return `
@@ -439,6 +439,7 @@ function renderScriptGrid(scripts) {
       ${scripts.map((script) => `
         <article class="script-card">
           <div class="cover" style="background:${coverGradient(script.name)}">
+            <div class="cover-texture"></div>
             <span class="status-label">${statusText(script.status)}</span>
             <span class="cover-letter">${escapeHtml(firstChar(script.name))}</span>
           </div>
@@ -579,7 +580,7 @@ function renderStepOne(script) {
   const bubbles = msgs.map((m) => {
     const isAi = m.role === "ai";
     return `<div class="chat-bubble ${isAi ? "ai" : "user"}">
-      ${isAi ? `<span class="chat-avatar">AI</span>` : ""}
+      ${isAi ? `${aiAvatarImg()}` : ""}
       <div class="chat-text ${isAi ? "md-content" : ""}">${isAi ? renderMd(m.content) : escapeHtml(m.content)}</div>
       ${!isAi ? `<span class="chat-avatar user-av">你</span>` : ""}
     </div>`;
@@ -587,7 +588,7 @@ function renderStepOne(script) {
 
   const streamingBubble = isChatting
     ? `<div class="chat-bubble ai streaming">
-        <span class="chat-avatar">AI</span>
+        ${aiAvatarImg()}
         <div class="chat-text md-content">${renderMd(state.generation.text || "…")}<span class="chat-cursor"></span></div>
       </div>`
     : "";
@@ -781,14 +782,14 @@ function renderOutlineRefineChat(script) {
   const bubbles = msgs.map((m) => {
     const isAi = m.role === "ai";
     return `<div class="chat-bubble ${isAi ? "ai" : "user"}">
-      ${isAi ? `<span class="chat-avatar">AI</span>` : ""}
+      ${isAi ? `${aiAvatarImg()}` : ""}
       <div class="chat-text ${isAi ? "md-content" : ""}">${isAi ? renderMd(m.content) : escapeHtml(m.content)}</div>
       ${!isAi ? `<span class="chat-avatar user-av">你</span>` : ""}
     </div>`;
   }).join("");
 
   const streamingBubble = isChatting
-    ? `<div class="chat-bubble ai"><span class="chat-avatar">AI</span><div class="chat-text md-content">${renderMd(state.generation.text || "…")}<span class="chat-cursor"></span></div></div>`
+    ? `<div class="chat-bubble ai">${aiAvatarImg()}<div class="chat-text md-content">${renderMd(state.generation.text || "…")}<span class="chat-cursor"></span></div></div>`
     : "";
 
   return `
@@ -916,14 +917,14 @@ function renderWbChat(script, isApplying = false) {
   const bubbles = msgs.map((m) => {
     const isAi = m.role === "ai";
     return `<div class="chat-bubble ${isAi ? "ai" : "user"}">
-      ${isAi ? `<span class="chat-avatar">AI</span>` : ""}
+      ${isAi ? `${aiAvatarImg()}` : ""}
       <div class="chat-text ${isAi ? "md-content" : ""}">${isAi ? renderMd(m.content) : escapeHtml(m.content)}</div>
       ${!isAi ? `<span class="chat-avatar user-av">你</span>` : ""}
     </div>`;
   }).join("");
 
   const streamingBubble = isChatting
-    ? `<div class="chat-bubble ai"><span class="chat-avatar">AI</span><div class="chat-text md-content">${renderMd(state.generation.text || "…")}<span class="chat-cursor"></span></div></div>`
+    ? `<div class="chat-bubble ai">${aiAvatarImg()}<div class="chat-text md-content">${renderMd(state.generation.text || "…")}<span class="chat-cursor"></span></div></div>`
     : "";
 
   const applyingRow = isApplying
@@ -996,7 +997,7 @@ function renderCharBgChat(character) {
   const ready = character._bgRefineReady;
   const msgsHtml = msgs.map((m) => `
     <div class="chat-bubble ${m.role === "user" ? "user" : "ai"}">
-      <div class="chat-avatar">${m.role === "user" ? "我" : "AI"}</div>
+      ${m.role === "user" ? '<span class="chat-avatar user-av">我</span>' : aiAvatarImg()}
       <div class="chat-text md-content">${m.role === "user" ? escapeHtml(m.content) : renderMd(m.content)}</div>
     </div>`).join("");
   return `
@@ -1233,7 +1234,7 @@ function renderEpPlanTab(ep, script, busy) {
   const canApply = msgs.length > 0 && !busy;
   const msgsHtml = msgs.map((m) => `
     <div class="chat-bubble ${m.role === "user" ? "user" : "ai"}">
-      <div class="chat-avatar">${m.role === "user" ? "我" : "AI"}</div>
+      ${m.role === "user" ? '<span class="chat-avatar user-av">我</span>' : aiAvatarImg()}
       <div class="chat-text md-content">${m.role === "user" ? escapeHtml(m.content) : renderMd(m.content)}</div>
     </div>`).join("");
   const chatPanel = `
@@ -1275,7 +1276,7 @@ function renderEpScriptTab(ep, script, busy) {
   const canApply  = scMsgs.length > 0 && !busy;
   const scMsgsHtml = scMsgs.map((m) => `
     <div class="chat-bubble ${m.role === "user" ? "user" : "ai"}">
-      <div class="chat-avatar">${m.role === "user" ? "我" : "AI"}</div>
+      ${m.role === "user" ? '<span class="chat-avatar user-av">我</span>' : aiAvatarImg()}
       <div class="chat-text md-content">${m.role === "user" ? escapeHtml(m.content) : renderMd(m.content)}</div>
     </div>`).join("");
 
@@ -3871,6 +3872,10 @@ function escapeHtml(value = "") {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
+}
+
+function aiAvatarImg() {
+  return `<img src="./images/ai-avatar.png" class="chat-avatar ai-av" alt="AI">`;
 }
 
 function renderMd(text = "") {
