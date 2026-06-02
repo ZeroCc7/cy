@@ -32,6 +32,22 @@
   box-sizing: border-box;
 }
 
+#particles {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 100;
+  overflow: hidden;
+}
+
+.particle {
+  position: absolute;
+  border-radius: 50%;
+  pointer-events: none;
+  will-change: transform;
+}
+
+
 html, body {
   margin: 0;
   height: 100%;
@@ -384,6 +400,7 @@ h3 {
   display: flex;
   flex-direction: column;
   transition: border-color 0.15s, box-shadow 0.15s;
+  will-change: transform;
 }
 
 .script-card:hover {
@@ -1394,9 +1411,34 @@ img.chat-avatar.ai-av {
 }
 
 @keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
+  to { transform: rotate(360deg); }
+}
+
+/* Logo glow-breathe — CSS only (immune to re-render) */
+@keyframes logo-pulse {
+  0%, 100% { opacity: 1;    filter: drop-shadow(0 0 3px rgba(200,155,82,0.25)); }
+  50%       { opacity: 0.82; filter: drop-shadow(0 0 9px rgba(200,155,82,0.68)); }
+}
+.brand-logo-img {
+  animation: logo-pulse 3.2s ease-in-out infinite;
+}
+
+/* Spinner inner glow-breathe */
+@keyframes spinner-glow {
+  0%, 100% { box-shadow: 0 0 18px rgba(53,214,223,0.15); }
+  50%       { box-shadow: 0 0 38px rgba(53,214,223,0.45); }
+}
+.spinner {
+  animation: spin 1s linear infinite, spinner-glow 2s ease-in-out infinite;
+}
+
+/* Stream-state breathing glow */
+@keyframes stream-breathe {
+  0%, 100% { box-shadow: 0 0 0   rgba(53,214,223,0);    border-color: rgba(151,166,181,0.24); }
+  50%       { box-shadow: 0 0 28px rgba(53,214,223,0.10); border-color: rgba(53,214,223,0.22); }
+}
+.stream-state {
+  animation: stream-breathe 2.6s ease-in-out infinite;
 }
 
 .stream-box {

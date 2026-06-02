@@ -117,6 +117,7 @@ def sse_stream(system, messages, max_tokens=4000):
 # ── Static ────────────────────────────────────────────────────────────────────
 
 app.mount("/images", StaticFiles(directory="images"), name="images")
+app.mount("/lib", StaticFiles(directory="lib"), name="lib")
 
 @app.get("/")
 async def index():

@@ -24,8 +24,10 @@ const portal = document.querySelector("#portal");
 let saveTimer = null;
 let generationRun = 0;
 let state = loadState();
+const _anim = { navDone: false, lastView: null, lastStep: null, bubbleCount: 0 };
 
 render();
+initParticles();
 
 state._serverLoading = true;
 render();
@@ -373,6 +375,7 @@ function createBlankScript() {
 function render() {
   app.innerHTML = `<div class="app">${renderTopNav()}${state.view === "list" ? renderListPage() : renderWorkspace()}</div>`;
   renderPortal();
+  postRender();
 }
 
 function renderTopNav() {
@@ -1630,9 +1633,26 @@ function onClick(event) {
   }
 
   if (action === "set-step" && script) {
-    script.currentStep = Number(button.dataset.step);
-    scheduleSave();
-    render();
+    const nextStep = Number(button.dataset.step);
+    if (nextStep === script.currentStep) return;
+    const applyStep = () => {
+      script.currentStep = nextStep;
+      scheduleSave();
+      render();
+    };
+    const inner = document.querySelector('.stage-inner');
+    if (inner && typeof anime !== 'undefined') {
+      anime({
+        targets: inner,
+        opacity:    [1, 0],
+        translateY: [0, -14],
+        duration: 180,
+        easing: 'easeInCubic',
+      }).finished.then(applyStep);
+    } else {
+      applyStep();
+    }
+    return;
   }
 
   if (action === "set-position" && script) {
@@ -3908,4 +3928,126 @@ function toast(message) {
     state.toasts.shift();
     renderPortal();
   }, 2600);
+}
+
+// ── Animation ─────────────────────────────────────────────────────────────────
+
+function postRender() {
+  if (typeof anime === 'undefined') return;
+  const script = activeScript();
+  const curView = state.view;
+  const curStep = script?.currentStep ?? null;
+
+  // 1. Nav slide-down — runs once on first paint
+  if (!_anim.navDone) {
+    _anim.navDone = true;
+    const nav = document.querySelector('.top-nav');
+    if (nav) {
+      anime({
+        targets: nav,
+        translateY: [-52, 0],
+        opacity:    [0, 1],
+        duration: 640,
+        easing: 'easeOutExpo',
+      });
+    }
+  }
+
+  // 2. List page: cards stagger in when view switches to list
+  if (curView === 'list' && _anim.lastView !== 'list') {
+    const cards = document.querySelectorAll('.script-card');
+    if (cards.length) {
+      anime({
+        targets: Array.from(cards),
+        opacity:    [0, 1],
+        translateY: [32, 0],
+        scale:      [0.95, 1],
+        duration: 480,
+        easing: 'easeOutExpo',
+        delay: anime.stagger(55),
+      });
+    }
+  }
+
+  // 3. Workspace: step content fades + slides up when step changes
+  if (curView !== 'list' && curStep !== null && _anim.lastStep !== curStep) {
+    const inner = document.querySelector('.stage-inner');
+    if (inner) {
+      anime({
+        targets: inner,
+        opacity:    [0, 1],
+        translateY: [20, 0],
+        duration: 360,
+        easing: 'easeOutCubic',
+      });
+    }
+  }
+
+  // 4. Card hover lift — re-attach on every list render (new DOM nodes each time)
+  document.querySelectorAll('.script-card').forEach((card) => {
+    card.addEventListener('mouseenter', () => {
+      anime({ targets: card, translateY: -5, scale: 1.02, duration: 220, easing: 'easeOutQuad' });
+    });
+    card.addEventListener('mouseleave', () => {
+      anime({ targets: card, translateY: 0, scale: 1,    duration: 220, easing: 'easeOutQuad' });
+    });
+  });
+
+  // 5. AI chat bubble entrance — only when a new bubble is added in the same context
+  const sameCtx = curView === _anim.lastView && curStep === _anim.lastStep;
+  const allBubbles = document.querySelectorAll('.chat-bubble');
+  const newBubbleCount = allBubbles.length;
+  if (sameCtx && newBubbleCount > _anim.bubbleCount) {
+    const freshBubbles = Array.from(allBubbles).slice(_anim.bubbleCount);
+    anime({
+      targets: freshBubbles,
+      opacity:    [0, 1],
+      translateY: [16, 0],
+      duration: 300,
+      easing: 'easeOutCubic',
+      delay: anime.stagger(55),
+    });
+  }
+  _anim.bubbleCount = newBubbleCount;
+
+  _anim.lastView = curView;
+  _anim.lastStep = curStep;
+}
+
+function initParticles() {
+  const container = document.getElementById('particles');
+  if (!container || typeof anime === 'undefined') return;
+
+  const palette = ['#c89b52', '#8bae8d', '#789ba3', '#9a7b9b', '#b6c47a'];
+  const count = 28;
+
+  for (let i = 0; i < count; i++) {
+    const p = document.createElement('div');
+    p.className = 'particle';
+    const size = (Math.random() * 2.8 + 1.2).toFixed(1);
+    const color = palette[Math.floor(Math.random() * palette.length)];
+    const opacity = (Math.random() * 0.15 + 0.04).toFixed(2);
+    Object.assign(p.style, {
+      width:     size + 'px',
+      height:    size + 'px',
+      background: color,
+      left:      (Math.random() * 100).toFixed(1) + '%',
+      top:       (Math.random() * 100).toFixed(1) + '%',
+      opacity:   opacity,
+      boxShadow: `0 0 ${(parseFloat(size) * 3).toFixed(0)}px ${color}`,
+    });
+    container.appendChild(p);
+  }
+
+  anime({
+    targets: '.particle',
+    translateX: () => anime.random(-220, 220),
+    translateY: () => anime.random(-220, 220),
+    scale:      () => parseFloat((Math.random() * 1.3 + 0.4).toFixed(2)),
+    duration:   () => anime.random(14000, 28000),
+    easing: 'linear',
+    direction: 'alternate',
+    loop: true,
+    delay:      () => anime.random(0, 14000),
+  });
 }
