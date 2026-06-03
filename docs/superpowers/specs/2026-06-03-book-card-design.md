@@ -64,6 +64,7 @@
 
 ```js
 bookTitle: "",       // AI 生成短书名（2-4字），空字符串表示未生成
+coverPrompt: "",     // AI 生成书名时同步产出的封面提示词，随题材动态变化
 coverImageUrl: "",   // AI 生成封面图 URL，空字符串表示未生成
 ```
 
@@ -108,13 +109,21 @@ coverImageUrl: data.coverImageUrl || "",
 - **输出**：`{ bookTitle: "xxx" }`
 - **状态**：生成中书脊显示小 spinner，完成后立即写入 `script.bookTitle`，`persist()`
 
+### 生成书名（同时生成封面提示词）
+
+`generate-book-title` 端点返回两个字段：
+```json
+{ "bookTitle": "凡尘劫", "coverPrompt": "仙侠风格书籍封面，云雾缭绕仙山…" }
+```
+
+AI 根据剧本名+世界观自行判断题材风格，生成匹配的封面提示词，存入 `script.coverPrompt`。
+
 ### 生成封面图
 
 - **触发**：hover 卡片 → 点击 `✦ 封面` 按钮
 - **端点**：`POST /api/project/:id/generate-cover`
-- **输入**：`{ bookTitle, worldbuilding? }`
+- **输入**：`{ coverPrompt }` （使用上一步生成的提示词；若为空则 fallback 到 `bookTitle + "书籍封面，竖版，精致插画"`）
 - **尺寸**：512×768（竖版，DashScope wan2.7-image-pro）
-- **Prompt 模板**：`{书名}，古风插画书籍封面，竖版，精致装帧，水墨渲染，金色细线边框，留白构图，高清`
 - **存储**：上传至 Supabase `character-images` bucket（复用现有 bucket），路径 `{pid}/cover_{timestamp}.webp`
 - **状态**：生成中封面显示 spinner overlay，完成后写入 `script.coverImageUrl`，`persist()`
 
