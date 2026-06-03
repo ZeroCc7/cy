@@ -369,6 +369,9 @@ function createBlankScript() {
     wbConversation: [],
     outlineConversation: [],
     aiConversation: [],
+    bookTitle: "",
+    coverPrompt: "",
+    coverImageUrl: "",
   };
 }
 
@@ -3720,6 +3723,9 @@ function serverProjectToScript(data) {
       appliedToContent: m.appliedToContent || false,
     })),
     worldbuilding: data.worldbuilding || "",
+    bookTitle:     data.bookTitle || "",
+    coverPrompt:   data.coverPrompt || "",
+    coverImageUrl: data.coverImageUrl || "",
     wbConversation: [],
     outlineConversation: [],
     _chatStarted: (data.messages || []).length > 0,
@@ -3735,6 +3741,9 @@ function scriptToServerPayload(script) {
     phase: stepToPhase(script.maxStep || script.currentStep),
     requirements: "",
     worldbuilding: script.worldbuilding || "",
+    bookTitle:     script.bookTitle || "",
+    coverPrompt:   script.coverPrompt || "",
+    coverImageUrl: script.coverImageUrl || "",
     outlinePlans: script.storyOutline.plans.length ? script.storyOutline.plans : undefined,
     outline: script.storyOutline.plans[script.storyOutline.selectedPlanIndex]?.content
       || script.storyOutline.plans[0]?.content || "",
