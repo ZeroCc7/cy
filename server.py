@@ -51,6 +51,24 @@ IMAGE_API_KEY  = os.environ.get("IMAGE_API_KEY") or os.environ["OPENAI_API_KEY"]
 IMAGE_BASE_URL = os.environ.get("IMAGE_BASE_URL", "https://api.openai.com/v1")
 image_client   = OpenAI(api_key=IMAGE_API_KEY, base_url=IMAGE_BASE_URL)
 
+
+def openai_image_bytes(model: str, prompt: str, size: str = "1024x1536") -> bytes:
+    """调用 gpt-image 系列生成图片，返回图片字节。兼容返回 b64_json 或 url 两种代理。"""
+    res = image_client.images.generate(
+        model=model,
+        prompt=prompt,
+        size=size,
+        quality="high",
+    )
+    item = res.data[0]
+    b64 = getattr(item, "b64_json", None)
+    if b64:
+        return base64.b64decode(b64)
+    url = getattr(item, "url", None)
+    if url:
+        return httpx.get(url, timeout=60).content
+    raise RuntimeError("图片生成失败：未返回图像数据")
+
 db: Client = create_client(
     os.environ["SUPABASE_URL"],
     os.environ["SUPABASE_SECRET_KEY"],
@@ -555,16 +573,7 @@ async def generate_character_image(pid: str, cid: str, req: Request):
     )
 
     if model.startswith("gpt-image"):
-        def _openai_gen() -> bytes:
-            res = image_client.images.generate(
-                model=model,
-                prompt=prompt_text,
-                size="1024x1792",
-                quality="hd",
-                response_format="b64_json",
-            )
-            return base64.b64decode(res.data[0].b64_json)
-        img_data = await asyncio.to_thread(_openai_gen)
+        img_data = await asyncio.to_thread(openai_image_bytes, model, prompt_text)
     else:
         def _dashscope_gen() -> str:
             msg = DSMessage(role="user", content=[{"text": prompt_text}])
@@ -674,16 +683,7 @@ async def generate_project_cover(pid: str, req: Request):
         cover_prompt = f"{book_title}，书籍封面插画，竖版构图，精致细腻" if book_title else "精美书籍封面插画，竖版构图"
 
     if model.startswith("gpt-image"):
-        def _openai_gen() -> bytes:
-            res = image_client.images.generate(
-                model=model,
-                prompt=cover_prompt,
-                size="1024x1792",
-                quality="hd",
-                response_format="b64_json",
-            )
-            return base64.b64decode(res.data[0].b64_json)
-        img_data = await asyncio.to_thread(_openai_gen)
+        img_data = await asyncio.to_thread(openai_image_bytes, model, cover_prompt)
     else:
         def _dashscope_gen() -> str:
             msg = DSMessage(role="user", content=[{"text": cover_prompt}])
