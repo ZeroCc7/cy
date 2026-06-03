@@ -396,8 +396,8 @@ h3 {
 .scripts-grid {
   margin-top: 14px;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(158px, 172px));
-  gap: 22px 24px;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 216px));
+  gap: 26px 28px;
 }
 
 .script-card {

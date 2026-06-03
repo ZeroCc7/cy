@@ -678,11 +678,12 @@ async def generate_project_cover(pid: str, req: Request):
             messages=[msg],
             watermark=False,
             n=1,
-            size="512*768",
+            size="1024*1440",
         )
         result = DSImageGen.wait(task=task, api_key=DASHSCOPE_API_KEY)
         if result.output.task_status != "SUCCEEDED":
-            raise RuntimeError(f"封面生成失败：{result.output.task_status}")
+            detail = getattr(result.output, "message", "") or getattr(result.output, "code", "")
+            raise RuntimeError(f"封面生成失败：{result.output.task_status} {detail}")
         for choice in result.output.choices:
             for item in choice["message"]["content"]:
                 if item.get("type") == "image":
