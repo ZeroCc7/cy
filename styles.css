@@ -396,56 +396,153 @@ h3 {
 .scripts-grid {
   margin-top: 14px;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
-  gap: 14px;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 200px));
+  gap: 24px 40px;
 }
 
-.script-card {
-  background: #1b1c22;
-  border: 1px solid rgba(255, 255, 255, 0.07);
-  border-radius: 8px;
-  overflow: hidden;
+/* ── Book card ── */
+.book-card {
+  position: relative;
   display: flex;
-  flex-direction: column;
-  transition: border-color 0.15s, box-shadow 0.15s;
+  flex-direction: row;
+  height: 300px;
+  border-radius: 4px 6px 6px 4px;
+  overflow: hidden;
+  cursor: pointer;
+  transform: perspective(700px) rotateY(-18deg);
+  transform-origin: center center;
+  transition: transform 0.38s cubic-bezier(0.25, 0.46, 0.45, 0.94),
+              box-shadow 0.38s ease;
+  box-shadow: -6px 10px 28px rgba(0, 0, 0, 0.55), 2px 2px 0 rgba(0,0,0,0.2);
   will-change: transform;
 }
 
-.script-card:hover {
-  border-color: rgba(53, 214, 223, 0.35);
-  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.32);
+.book-card:hover {
+  transform: perspective(700px) rotateY(0deg) translateY(-14px);
+  box-shadow: 0 22px 50px rgba(0, 0, 0, 0.6), 0 4px 12px rgba(0,0,0,0.3);
 }
 
-.cover {
-  height: 220px;
-  background: linear-gradient(150deg, #138c2c 0%, #09655f 100%);
+.book-spine {
+  width: 38px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 0 10px;
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.spine-title {
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  font-size: 11px;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.85);
+  letter-spacing: 0.1em;
+  max-height: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.spine-step {
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.4);
+  writing-mode: vertical-rl;
+}
+
+.book-cover {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   position: relative;
-  display: grid;
-  place-items: center;
-  isolation: isolate;
+}
+
+.book-cover-bg {
+  flex: 1;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  background-size: cover;
+  background-position: center top;
+}
+
+.book-cover-bg img.cover-img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: top center;
+}
+
+.book-title-vert {
+  position: relative;
+  z-index: 2;
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  font-size: 24px;
+  font-weight: 900;
+  color: rgba(255, 255, 255, 0.92);
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.6), 0 0 30px rgba(0,0,0,0.4);
+  letter-spacing: 0.12em;
+  max-height: 200px;
   overflow: hidden;
 }
 
-.cover::before {
-  content: "";
-  position: absolute;
-  width: 90px;
-  height: 90px;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.07);
-  right: -20px;
-  top: -20px;
+.book-info {
+  flex-shrink: 0;
+  padding: 8px 10px;
+  background: rgba(0, 0, 0, 0.72);
+  backdrop-filter: blur(4px);
+  opacity: 0;
+  transform: translateY(6px);
+  transition: opacity 0.22s ease, transform 0.22s ease;
 }
 
-.cover::after {
-  content: "";
+.book-card:hover .book-info {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.book-meta {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.45);
+  margin-bottom: 6px;
+}
+
+.book-actions {
+  display: flex;
+  gap: 5px;
+}
+
+.book-actions .ghost-button {
+  font-size: 11px;
+  padding: 3px 8px;
+  flex: 1;
+}
+
+.book-actions .primary-button {
+  font-size: 11px;
+  padding: 3px 10px;
+  flex: 2;
+}
+
+.book-cover-gen-overlay {
   position: absolute;
-  width: 55px;
-  height: 55px;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.05);
-  left: -18px;
-  bottom: -18px;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: rgba(0,0,0,0.55);
+  font-size: 11px;
+  color: rgba(255,255,255,0.6);
 }
 
 .cover-texture {
@@ -457,15 +554,6 @@ h3 {
   mix-blend-mode: overlay;
   z-index: 0;
   pointer-events: none;
-}
-
-.cover-letter {
-  font-size: 56px;
-  font-weight: 900;
-  color: rgba(255, 255, 255, 0.9);
-  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.4);
-  position: relative;
-  z-index: 1;
 }
 
 .status-label {
@@ -483,10 +571,6 @@ h3 {
   border: 1px solid rgba(255, 255, 255, 0.15);
 }
 
-.card-body {
-  padding: 10px 12px 12px;
-}
-
 .meta {
   color: var(--muted);
   font-size: 11px;
@@ -500,13 +584,6 @@ h3 {
   display: flex;
   align-items: flex-start;
   gap: 4px;
-}
-
-.card-actions {
-  margin-top: 10px;
-  display: flex;
-  gap: 6px;
-  align-items: center;
 }
 
 .script-table {
