@@ -307,6 +307,9 @@ def _row_to_proj(row: dict) -> dict:
         "episodes":     row.get("episodes") or {},
         "characters":    row.get("characters") or [],
         "episodePlans":  row.get("episode_plans") or {},
+        "bookTitle":     row.get("book_title", "") or "",
+        "coverPrompt":   row.get("cover_prompt", "") or "",
+        "coverImageUrl": row.get("cover_image_url", "") or "",
         "created":       row.get("created", ""),
         "updated":       row.get("updated", ""),
     }
@@ -336,7 +339,10 @@ def _save_proj(data: dict) -> str:
         "messages":      data.get("messages", []),
         "episodes":      data.get("episodes", {}),
         "characters":    data.get("characters", []),
-        "episode_plans": data.get("episodePlans", {}),
+        "episode_plans":    data.get("episodePlans", {}),
+        "book_title":      data.get("bookTitle", ""),
+        "cover_prompt":    data.get("coverPrompt", ""),
+        "cover_image_url": data.get("coverImageUrl", ""),
         "created":       data.get("created") or now,
         "updated":       now,
     }).execute()
