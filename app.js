@@ -1519,7 +1519,10 @@ function renderModal() {
           <header class="modal-head"><h3>生成封面</h3><button class="icon-button" data-action="close-modal">×</button></header>
           <div class="modal-body gen-image-body">
             <div class="gen-image-field">
-              <label class="field-title">封面提示词<span class="muted">（可直接修改）</span></label>
+              <label class="field-title gen-prompt-label">
+                封面提示词<span class="muted">（可直接修改）</span>
+                <button class="ghost-button gen-prompt-btn" type="button" data-action="gen-cover-prompt" data-id="${modal.scriptId}">✦ 据世界观生成</button>
+              </label>
               <textarea class="gen-prompt-textarea" data-ui="gen-prompt-input">${escapeHtml(modal.prompt || "")}</textarea>
             </div>
             <div class="gen-image-field">
@@ -1688,6 +1691,27 @@ function onClick(event) {
         render();
       })
       .catch(() => { script._coverGenerating = false; toast("封面生成失败，请重试。"); render(); });
+  }
+
+  if (action === "gen-cover-prompt") {
+    const id = button.dataset.id;
+    const script = state.scripts.find((s) => s.id === id);
+    if (!script) return;
+    const ta = document.querySelector('[data-ui="gen-prompt-input"]');
+    const origText = button.textContent;
+    button.disabled = true;
+    button.textContent = "生成中…";
+    fetch(`/api/project/${id}/generate-cover-prompt`, { method: "POST" })
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.coverPrompt) {
+          if (ta) ta.value = data.coverPrompt;
+          script.coverPrompt = data.coverPrompt;
+          if (state.modal) state.modal.prompt = data.coverPrompt;
+        }
+      })
+      .catch(() => toast("提示词生成失败，请重试。"))
+      .finally(() => { button.disabled = false; button.textContent = origText; });
   }
 
   if (action === "back-list") {

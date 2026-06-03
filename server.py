@@ -671,6 +671,50 @@ async def generate_book_title(pid: str, req: Request):
     return {"bookTitle": book_title, "coverPrompt": cover_prompt}
 
 
+@app.post("/api/project/{pid}/generate-cover-prompt")
+async def generate_cover_prompt(pid: str):
+    proj = _load_proj(pid)
+    title         = proj.get("title", "") or ""
+    book_title    = proj.get("bookTitle", "") or ""
+    worldbuilding = (proj.get("worldbuilding") or "")[:600]
+
+    context = f"剧本名：{title}"
+    if book_title:
+        context += f"\n书名：{book_title}"
+    if worldbuilding:
+        context += f"\n世界观设定：{worldbuilding}"
+
+    system = (
+        "你是书籍封面设计顾问。根据剧本信息和世界观设定，生成一段用于 AI 绘图的封面插画提示词。\n"
+        "要求：先判断题材风格（古风/仙侠/都市/科幻/悬疑/玄幻等），再描述具体的封面画面"
+        "（主体形象、场景环境、氛围、色调、光影），以【书籍封面插画，竖版构图，精致细腻】结尾。\n"
+        "只返回提示词本身，不要任何解释、编号或引号。"
+    )
+
+    def _call():
+        resp = client.chat.completions.create(
+            model=MODEL,
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": context},
+            ],
+            max_tokens=400,
+            temperature=0.9,
+        )
+        return resp.choices[0].message.content or ""
+
+    raw = await asyncio.to_thread(_call)
+    cover_prompt = raw.strip().strip('「」“”"\'')
+
+    try:
+        now = datetime.now().strftime("%Y-%m-%d %H:%M")
+        db.table("projects").update({"cover_prompt": cover_prompt, "updated": now}).eq("id", pid).execute()
+    except Exception:
+        pass  # 写库失败不影响返回，提示词主要给前端用
+
+    return {"coverPrompt": cover_prompt}
+
+
 @app.post("/api/project/{pid}/generate-cover")
 async def generate_project_cover(pid: str, req: Request):
     import time as _time

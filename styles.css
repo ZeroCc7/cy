@@ -1909,6 +1909,20 @@ img.chat-avatar.ai-av {
   flex-direction: column;
   gap: 6px;
 }
+.gen-prompt-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.gen-prompt-btn {
+  margin-left: auto;
+  font-size: 11px;
+  padding: 3px 10px;
+}
+.gen-prompt-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
 .gen-prompt-textarea {
   min-height: 200px;
   font-size: 13px;
