@@ -2607,6 +2607,19 @@ select:focus,
   box-shadow: 0 0 16px rgba(200, 155, 82, 0.58);
 }
 
+/* Book card theme overrides */
+.book-spine {
+  border-right-color: rgba(228, 219, 194, 0.1);
+}
+
+.book-info {
+  background: rgba(10, 10, 8, 0.82);
+}
+
+.book-meta {
+  color: rgba(228, 219, 194, 0.35);
+}
+
 .nav-link {
   color: #b9b09f;
 }
