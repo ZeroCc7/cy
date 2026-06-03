@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import asyncio
 import base64
+import hashlib
 import os
 import re
 import json
@@ -136,6 +137,35 @@ def sse_stream(system, messages, max_tokens=4000):
 
 app.mount("/images", StaticFiles(directory="images"), name="images")
 app.mount("/lib", StaticFiles(directory="lib"), name="lib")
+
+IMG_CACHE_DIR = Path("images/cache")
+IMG_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+
+@app.get("/img")
+async def img_proxy(u: str):
+    """代理并本地缓存 Supabase 存储图片，绕过跨区域延迟。首次下载后存本地，之后本地直出。"""
+    if ".supabase.co/storage/" not in u:
+        raise HTTPException(400, "仅支持代理 Supabase 存储图片")
+    key = hashlib.sha1(u.encode("utf-8")).hexdigest()
+    fp = IMG_CACHE_DIR / f"{key}.webp"
+    if not fp.exists():
+        try:
+            async with httpx.AsyncClient(timeout=60) as hc:
+                r = await hc.get(u)
+            if r.status_code != 200:
+                raise HTTPException(502, f"源图获取失败：{r.status_code}")
+            fp.write_bytes(r.content)
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(502, f"源图获取失败：{e}")
+    return FileResponse(
+        str(fp),
+        media_type="image/webp",
+        headers={"Cache-Control": "public, max-age=31536000, immutable"},
+    )
+
 
 @app.get("/")
 async def index():

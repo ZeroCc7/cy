@@ -13,6 +13,9 @@ __pycache__/
 # 生成的剧本输出
 scripts/
 
+# 本地图片缓存代理
+images/cache/
+
 # 系统文件
 .DS_Store
 

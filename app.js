@@ -455,7 +455,7 @@ function renderBookCard(script) {
   const isCoverGen = script._coverGenerating;
 
   const coverInner = script.coverImageUrl
-    ? `<img class="cover-img" src="${escapeAttr(script.coverImageUrl)}" alt="${escapeAttr(coverTitle)}" />`
+    ? `<img class="cover-img" src="${escapeAttr(imgSrc(script.coverImageUrl))}" alt="${escapeAttr(coverTitle)}" />`
     : `<div class="cover-texture"></div><span class="cover-title">${escapeHtml(coverTitle)}</span>`;
 
   const genOverlay = isCoverGen
@@ -1052,14 +1052,14 @@ function renderRoleCard(character) {
   const imgArea = isImgGen
     ? `<div class="char-img-main is-loading"><div class="spinner"></div><p class="muted" style="font-size:11px;margin-top:6px">生成中…</p></div>`
     : activeImg
-      ? `<img class="char-img-main clickable" src="${escapeAttr(activeImg.url)}" alt="${escapeAttr(character.name)}" data-action="preview-image" data-url="${escapeAttr(activeImg.url)}" />`
+      ? `<img class="char-img-main clickable" src="${escapeAttr(imgSrc(activeImg.url))}" alt="${escapeAttr(character.name)}" data-action="preview-image" data-url="${escapeAttr(activeImg.url)}" />`
       : `<div class="char-img-main is-placeholder"><span>${escapeHtml(firstChar(character.name))}</span></div>`;
 
   const thumbs = imgs.length > 0 ? `
     <div class="char-img-thumbs">
       ${imgs.map((img, i) => `
         <div class="char-thumb-wrap ${i === activeIdx ? "active" : ""}">
-          <button class="char-thumb" type="button" data-action="char-select-img" data-char-id="${character.id}" data-idx="${i}"><img src="${escapeAttr(img.url)}" /></button>
+          <button class="char-thumb" type="button" data-action="char-select-img" data-char-id="${character.id}" data-idx="${i}"><img src="${escapeAttr(imgSrc(img.url))}" /></button>
           <button class="char-thumb-del" type="button" data-action="delete-char-image" data-char-id="${character.id}" data-img-id="${escapeAttr(img.id)}" title="删除">×</button>
         </div>`).join("")}
     </div>` : "";
@@ -1104,12 +1104,12 @@ function renderCharEditModal(char) {
   const imgMain = isImgGen
     ? `<div class="modal-char-img is-loading"><div class="spinner"></div></div>`
     : activeImg
-      ? `<img class="modal-char-img clickable" src="${escapeAttr(activeImg.url)}" data-action="preview-image" data-url="${escapeAttr(activeImg.url)}" />`
+      ? `<img class="modal-char-img clickable" src="${escapeAttr(imgSrc(activeImg.url))}" data-action="preview-image" data-url="${escapeAttr(activeImg.url)}" />`
       : `<div class="modal-char-img is-placeholder"><span>${escapeHtml(firstChar(char.name))}</span></div>`;
 
   const thumbs = imgs.map((img, i) => `
     <div class="modal-thumb-wrap">
-      <button class="modal-thumb ${i === activeIdx ? "active" : ""}" type="button" data-action="char-select-img" data-char-id="${char.id}" data-idx="${i}"><img src="${escapeAttr(img.url)}" /></button>
+      <button class="modal-thumb ${i === activeIdx ? "active" : ""}" type="button" data-action="char-select-img" data-char-id="${char.id}" data-idx="${i}"><img src="${escapeAttr(imgSrc(img.url))}" /></button>
       <button class="modal-thumb-del" type="button" data-action="delete-char-image" data-char-id="${char.id}" data-img-id="${img.id}">×</button>
     </div>`).join("");
 
@@ -1483,7 +1483,7 @@ function renderModal() {
   if (modal.type === "image-preview") {
     return `
       <div class="modal-backdrop img-preview-backdrop" data-action="close-modal">
-        <img class="img-preview-full" src="${escapeAttr(modal.url)}" alt="" />
+        <img class="img-preview-full" src="${escapeAttr(imgSrc(modal.url))}" alt="" />
       </div>`;
   }
   if (modal.type === "gen-image-confirm") {
@@ -4040,6 +4040,15 @@ function coverGradient(name) {
   ];
   const index = [...(name || "")].reduce((sum, char) => sum + char.charCodeAt(0), 0) % gradients.length;
   return gradients[index];
+}
+
+// 把 Supabase 存储图片走本地缓存代理，绕过跨区域延迟；其它 URL 原样返回
+function imgSrc(url) {
+  if (!url || typeof url !== "string") return url || "";
+  if (url.startsWith("http") && url.includes(".supabase.co/storage/")) {
+    return `/img?u=${encodeURIComponent(url)}`;
+  }
+  return url;
 }
 
 function escapeHtml(value = "") {
