@@ -1512,6 +1512,32 @@ function renderModal() {
         </section>
       </div>`;
   }
+  if (modal.type === "gen-cover-confirm") {
+    return `
+      <div class="modal-backdrop">
+        <section class="modal modal-gen-image">
+          <header class="modal-head"><h3>生成封面</h3><button class="icon-button" data-action="close-modal">×</button></header>
+          <div class="modal-body gen-image-body">
+            <div class="gen-image-field">
+              <label class="field-title">封面提示词<span class="muted">（可直接修改）</span></label>
+              <textarea class="gen-prompt-textarea" data-ui="gen-prompt-input">${escapeHtml(modal.prompt || "")}</textarea>
+            </div>
+            <div class="gen-image-field">
+              <label class="field-title">生成模型</label>
+              <select data-ui="gen-model-select" class="small-select" style="width:100%">
+                <option value="wan2.7-image-pro" ${modal.model === "wan2.7-image-pro" ? "selected" : ""}>万象 2.7 Pro（推荐）</option>
+                <option value="wan2.7-image" ${modal.model === "wan2.7-image" ? "selected" : ""}>万象 2.7</option>
+                <option value="gpt-image-2" ${modal.model === "gpt-image-2" ? "selected" : ""}>GPT Image 2</option>
+              </select>
+            </div>
+          </div>
+          <footer class="modal-actions">
+            <button class="ghost-button" data-action="close-modal">取消</button>
+            <button class="primary-button" data-action="confirm-gen-cover">✦ 开始生成</button>
+          </footer>
+        </section>
+      </div>`;
+  }
   if (modal.type === "char-edit") {
     const script = activeScript();
     const char = script?.characters.find((c) => c.id === modal.charId);
@@ -1633,12 +1659,26 @@ function onClick(event) {
     const id = button.dataset.id;
     const script = state.scripts.find((s) => s.id === id);
     if (!script || script._coverGenerating) return;
+    const defaultPrompt = script.coverPrompt
+      || `${script.bookTitle || script.name}，书籍封面插画，竖版构图，精致细腻`;
+    state.modal = { type: "gen-cover-confirm", scriptId: id, prompt: defaultPrompt, model: "wan2.7-image-pro" };
+    renderPortal();
+  }
+
+  if (action === "confirm-gen-cover") {
+    const modal = state.modal;
+    const script = state.scripts.find((s) => s.id === modal?.scriptId);
+    const prompt = document.querySelector('[data-ui="gen-prompt-input"]')?.value.trim() || modal?.prompt || "";
+    const model = document.querySelector('[data-ui="gen-model-select"]')?.value || modal?.model || "wan2.7-image-pro";
+    state.modal = null;
+    renderPortal();
+    if (!script || script._coverGenerating) return;
     script._coverGenerating = true;
     render();
-    fetch(`/api/project/${id}/generate-cover`, {
+    fetch(`/api/project/${modal.scriptId}/generate-cover`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ coverPrompt: script.coverPrompt || "", bookTitle: script.bookTitle || script.name }),
+      body: JSON.stringify({ coverPrompt: prompt, bookTitle: script.bookTitle || script.name, model }),
     })
       .then((r) => r.json())
       .then((data) => {
@@ -1647,7 +1687,7 @@ function onClick(event) {
         persist();
         render();
       })
-      .catch(() => { script._coverGenerating = false; render(); });
+      .catch(() => { script._coverGenerating = false; toast("封面生成失败，请重试。"); render(); });
   }
 
   if (action === "back-list") {

@@ -666,33 +666,46 @@ async def generate_project_cover(pid: str, req: Request):
     body = await req.json()
     cover_prompt = (body.get("coverPrompt") or "").strip()
     book_title   = (body.get("bookTitle") or "").strip()
+    model        = body.get("model", "wan2.7-image-pro")
 
     if not cover_prompt:
         cover_prompt = f"{book_title}，书籍封面插画，竖版构图，精致细腻" if book_title else "精美书籍封面插画，竖版构图"
 
-    def _dashscope_gen() -> str:
-        msg = DSMessage(role="user", content=[{"text": cover_prompt}])
-        task = DSImageGen.async_call(
-            model="wan2.7-image-pro",
-            api_key=DASHSCOPE_API_KEY,
-            messages=[msg],
-            watermark=False,
-            n=1,
-            size="1024*1440",
-        )
-        result = DSImageGen.wait(task=task, api_key=DASHSCOPE_API_KEY)
-        if result.output.task_status != "SUCCEEDED":
-            detail = getattr(result.output, "message", "") or getattr(result.output, "code", "")
-            raise RuntimeError(f"封面生成失败：{result.output.task_status} {detail}")
-        for choice in result.output.choices:
-            for item in choice["message"]["content"]:
-                if item.get("type") == "image":
-                    return item["image"]
-        raise RuntimeError("未获取到封面图 URL")
+    if model.startswith("gpt-image"):
+        def _openai_gen() -> bytes:
+            res = image_client.images.generate(
+                model=model,
+                prompt=cover_prompt,
+                size="1024x1792",
+                quality="hd",
+                response_format="b64_json",
+            )
+            return base64.b64decode(res.data[0].b64_json)
+        img_data = await asyncio.to_thread(_openai_gen)
+    else:
+        def _dashscope_gen() -> str:
+            msg = DSMessage(role="user", content=[{"text": cover_prompt}])
+            task = DSImageGen.async_call(
+                model=model,
+                api_key=DASHSCOPE_API_KEY,
+                messages=[msg],
+                watermark=False,
+                n=1,
+                size="1024*1440",
+            )
+            result = DSImageGen.wait(task=task, api_key=DASHSCOPE_API_KEY)
+            if result.output.task_status != "SUCCEEDED":
+                detail = getattr(result.output, "message", "") or getattr(result.output, "code", "")
+                raise RuntimeError(f"封面生成失败：{result.output.task_status} {detail}")
+            for choice in result.output.choices:
+                for item in choice["message"]["content"]:
+                    if item.get("type") == "image":
+                        return item["image"]
+            raise RuntimeError("未获取到封面图 URL")
 
-    image_url = await asyncio.to_thread(_dashscope_gen)
-    async with httpx.AsyncClient(timeout=60) as hc:
-        img_data = (await hc.get(image_url)).content
+        image_url = await asyncio.to_thread(_dashscope_gen)
+        async with httpx.AsyncClient(timeout=60) as hc:
+            img_data = (await hc.get(image_url)).content
 
     img_id = str(int(_time.time() * 1000))
     path = f"{pid}/cover_{img_id}.webp"
