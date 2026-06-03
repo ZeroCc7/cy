@@ -611,6 +611,56 @@ async def delete_character_image(pid: str, cid: str, img_id: str):
     return {"ok": True}
 
 
+@app.post("/api/project/{pid}/generate-book-title")
+async def generate_book_title(pid: str, req: Request):
+    body = await req.json()
+    title = body.get("title", "").strip()
+    worldbuilding = (body.get("worldbuilding") or "").strip()[:400]
+
+    context = f"剧本名：{title}"
+    if worldbuilding:
+        context += f"\n世界观简介：{worldbuilding}"
+
+    system = (
+        "你是一位资深书名顾问。根据用户提供的剧本信息，完成两件事：\n"
+        "1. 生成一个2-4个汉字的书名，简洁有力，富有意境，契合题材风格，不要标点符号。\n"
+        "2. 根据题材（古风/都市/科幻/悬疑/玄幻等）生成一段封面插画提示词，"
+        "描述封面画面内容，以"书籍封面插画，竖版构图，精致细腻"结尾。\n\n"
+        "只返回 JSON，格式：{\"bookTitle\": \"xxx\", \"coverPrompt\": \"xxx\"}"
+    )
+
+    def _call():
+        resp = client.chat.completions.create(
+            model=MODEL,
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": context},
+            ],
+            max_tokens=300,
+            temperature=0.9,
+        )
+        return resp.choices[0].message.content or ""
+
+    raw = await asyncio.to_thread(_call)
+
+    match = re.search(r'\{.*\}', raw, re.DOTALL)
+    if not match:
+        raise HTTPException(500, f"模型返回格式错误：{raw[:100]}")
+    data = json.loads(match.group())
+
+    book_title   = str(data.get("bookTitle", "")).strip()[:8]
+    cover_prompt = str(data.get("coverPrompt", "")).strip()
+
+    now = datetime.now().strftime("%Y-%m-%d %H:%M")
+    db.table("projects").update({
+        "book_title":   book_title,
+        "cover_prompt": cover_prompt,
+        "updated":      now,
+    }).eq("id", pid).execute()
+
+    return {"bookTitle": book_title, "coverPrompt": cover_prompt}
+
+
 # ── Episode Plans ────────────────────────────────────────────────────────────
 
 @app.post("/api/project/{pid}/generate-episode-plans")
