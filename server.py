@@ -77,6 +77,18 @@ db: Client = create_client(
 
 app = FastAPI()
 
+# 进行中的角色图生成任务（key = "pid:cid"），以及任务引用（防止被 GC）
+PENDING_CHAR_IMG: set = set()
+_BG_TASKS: set = set()
+
+
+def _spawn_bg(coro):
+    """启动一个脱离请求生命周期的后台任务（客户端断开/刷新不会取消它）。"""
+    task = asyncio.create_task(coro)
+    _BG_TASKS.add(task)
+    task.add_done_callback(_BG_TASKS.discard)
+    return task
+
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -639,42 +651,64 @@ async def generate_character_image(pid: str, cid: str, req: Request):
         "精致五官，华丽古装服饰，衣袂飘逸，细腻笔触，简洁渐变背景，高清插画"
     )
 
-    if model.startswith("gpt-image"):
-        img_data = await asyncio.to_thread(openai_image_bytes, model, prompt_text)
-    else:
-        def _dashscope_gen() -> str:
-            msg = DSMessage(role="user", content=[{"text": prompt_text}])
-            task = DSImageGen.async_call(
-                model=model,
-                api_key=DASHSCOPE_API_KEY,
-                messages=[msg],
-                watermark=False,
-                n=1,
-                size="1024*1440",
+    key = f"{pid}:{cid}"
+
+    async def _run():
+        try:
+            if model.startswith("gpt-image"):
+                img_data = await asyncio.to_thread(openai_image_bytes, model, prompt_text)
+            else:
+                def _dashscope_gen() -> str:
+                    msg = DSMessage(role="user", content=[{"text": prompt_text}])
+                    task = DSImageGen.async_call(
+                        model=model,
+                        api_key=DASHSCOPE_API_KEY,
+                        messages=[msg],
+                        watermark=False,
+                        n=1,
+                        size="1024*1440",
+                    )
+                    result = DSImageGen.wait(task=task, api_key=DASHSCOPE_API_KEY)
+                    if result.output.task_status != "SUCCEEDED":
+                        raise RuntimeError(f"图片生成失败：{result.output.task_status}")
+                    for choice in result.output.choices:
+                        for item in choice["message"]["content"]:
+                            if item.get("type") == "image":
+                                return item["image"]
+                    raise RuntimeError("未获取到图片 URL")
+
+                image_url = await asyncio.to_thread(_dashscope_gen)
+                async with httpx.AsyncClient(timeout=120) as hc:
+                    img_data = (await hc.get(image_url)).content
+
+            import time as _time
+            img_id = str(int(_time.time() * 1000))
+            path = f"{pid}/{cid}_{img_id}.webp"
+            db.storage.from_("character-images").upload(
+                path, img_data,
+                file_options={"content-type": "image/webp", "upsert": "false"},
             )
-            result = DSImageGen.wait(task=task, api_key=DASHSCOPE_API_KEY)
-            if result.output.task_status != "SUCCEEDED":
-                raise RuntimeError(f"图片生成失败：{result.output.task_status}")
-            for choice in result.output.choices:
-                for item in choice["message"]["content"]:
-                    if item.get("type") == "image":
-                        return item["image"]
-            raise RuntimeError("未获取到图片 URL")
+            public_url = db.storage.from_("character-images").get_public_url(path)
+            _db_add_char_image(pid, cid, img_id, public_url)
+        except Exception as e:
+            print(f"[char-image] 生成失败 {key}: {e}")
+        finally:
+            PENDING_CHAR_IMG.discard(key)
 
-        image_url = await asyncio.to_thread(_dashscope_gen)
-        async with httpx.AsyncClient(timeout=60) as hc:
-            img_data = (await hc.get(image_url)).content
+    PENDING_CHAR_IMG.add(key)
+    _spawn_bg(_run())
+    return {"status": "started"}
 
-    import time as _time
-    img_id = str(int(_time.time() * 1000))
-    path = f"{pid}/{cid}_{img_id}.webp"
-    db.storage.from_("character-images").upload(
-        path, img_data,
-        file_options={"content-type": "image/webp", "upsert": "false"},
-    )
-    public_url = db.storage.from_("character-images").get_public_url(path)
-    _db_add_char_image(pid, cid, img_id, public_url)
-    return {"url": public_url, "imgId": img_id}
+
+@app.get("/api/project/{pid}/char-images")
+async def char_images_status(pid: str):
+    """供前端轮询：哪些角色正在生成图，以及各角色最新的图片列表（已写入 DB 的）。"""
+    res = db.table("projects").select("characters").eq("id", pid).maybe_single().execute()
+    chars = (res.data or {}).get("characters") if res and res.data else []
+    out = [{"id": c.get("id"), "images": c.get("images") or []} for c in (chars or [])]
+    prefix = f"{pid}:"
+    pending = [k.split(":", 1)[1] for k in PENDING_CHAR_IMG if k.startswith(prefix)]
+    return {"pending": pending, "characters": out}
 
 
 @app.delete("/api/project/{pid}/characters/{cid}/images/{img_id}")

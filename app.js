@@ -161,7 +161,7 @@ function normalizeState(raw) {
   return next;
 }
 
-function persist() {
+function saveLocal() {
   const payload = {
     listView: state.listView,
     search: state.search,
@@ -174,6 +174,10 @@ function persist() {
     scripts: state.scripts,
   };
   localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+}
+
+function persist() {
+  saveLocal();
   setSaveState("saved");
   const active = activeScript();
   if (active && active._serverLoaded) syncToServer(active);
@@ -1628,12 +1632,15 @@ function onClick(event) {
           state.selectedEpisodeId = full.episodes?.[0]?.id || "";
           state._projectLoading = false;
           render();
+          // 若刷新前有正在后台生成的角色图，进入项目时自动续上轮询
+          startCharImgPolling(full);
         })
         .catch(() => { state._projectLoading = false; render(); });
       return;
     }
     state.selectedEpisodeId = target?.episodes?.[0]?.id || "";
     render();
+    if (target) startCharImgPolling(target);
   }
 
   if (action === "gen-book-title") {
@@ -2456,14 +2463,52 @@ async function generateCharImage(script, char, prompt, model = "wan2.7-image-pro
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ prompt: prompt || char._genPrompt || char.appearance || char.name, model }),
   });
-  if (!res.ok) throw new Error(`generate-image: ${res.status}`);
-  const { url, imgId } = await res.json();
-  char.images = char.images || [];
-  char.images.push({ id: imgId, url });
-  char._activeImgIdx = char.images.length - 1;
-  char._imgGenerating = false;
-  persist();
-  render();
+  if (!res.ok) { char._imgGenerating = false; render(); throw new Error(`generate-image: ${res.status}`); }
+  // 后端已在后台生成（刷新/离开都不会中断），改为轮询等待结果
+  startCharImgPolling(script);
+}
+
+let _charImgPollTimer = null;
+
+// 拉取一次角色图状态；返回是否仍有进行中的生成
+async function pollCharImagesOnce(script) {
+  try {
+    const res = await fetch(`/api/project/${script.id}/char-images`);
+    if (!res.ok) return false;
+    const data = await res.json();
+    const pendingSet = new Set(data.pending || []);
+    let changed = false;
+    (data.characters || []).forEach((cc) => {
+      const char = script.characters.find((c) => c.id === cc.id);
+      if (!char) return;
+      const newImgs = (cc.images || []).map((im) => ({ id: im.id, url: im.url }));
+      if (newImgs.length !== (char.images || []).length) {
+        char.images = newImgs;
+        char._activeImgIdx = char.images.length - 1;
+        changed = true;
+      }
+      const nowGen = pendingSet.has(char.id);
+      if (!!char._imgGenerating !== nowGen) { char._imgGenerating = nowGen; changed = true; }
+    });
+    if (changed) { saveLocal(); render(); }
+    return (data.pending || []).length > 0;
+  } catch {
+    return false;
+  }
+}
+
+// 启动轮询，直到该项目没有进行中的生成任务为止
+function startCharImgPolling(script) {
+  if (_charImgPollTimer) return;
+  const tick = async () => {
+    const stillPending = await pollCharImagesOnce(script);
+    if (!stillPending && _charImgPollTimer) {
+      clearInterval(_charImgPollTimer);
+      _charImgPollTimer = null;
+    }
+  };
+  _charImgPollTimer = setInterval(tick, 3000);
+  tick();
 }
 
 async function uploadCharImage(script, char, file) {
