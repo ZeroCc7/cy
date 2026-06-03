@@ -396,8 +396,8 @@ h3 {
 .scripts-grid {
   margin-top: 14px;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
-  gap: 14px;
+  grid-template-columns: repeat(auto-fill, minmax(158px, 172px));
+  gap: 22px 24px;
 }
 
 .script-card {
@@ -417,13 +417,98 @@ h3 {
 }
 
 .cover {
-  height: 220px;
+  aspect-ratio: 3 / 4;
   background: linear-gradient(150deg, #138c2c 0%, #09655f 100%);
   position: relative;
   display: grid;
   place-items: center;
   isolation: isolate;
   overflow: hidden;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+}
+
+/* AI 封面图铺满 */
+.cover-img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  z-index: 1;
+}
+
+/* 无封面图时的竖排书名 */
+.cover-title {
+  position: relative;
+  z-index: 1;
+  writing-mode: vertical-rl;
+  text-orientation: upright;
+  font-size: 30px;
+  font-weight: 900;
+  letter-spacing: 0.16em;
+  color: rgba(255, 255, 255, 0.96);
+  text-shadow: 0 2px 14px rgba(0, 0, 0, 0.55), 0 0 28px rgba(0, 0, 0, 0.35);
+  max-height: 78%;
+  overflow: hidden;
+}
+
+/* 封面生成中遮罩 */
+.cover-gen-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: rgba(0, 0, 0, 0.55);
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 12px;
+}
+
+/* hover 浮现的生成按钮 */
+.cover-hover-actions {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 4;
+  display: flex;
+  gap: 6px;
+  padding: 8px;
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.82), transparent);
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.script-card:hover .cover-hover-actions {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.cover-mini-btn {
+  flex: 1;
+  font-size: 11px;
+  padding: 4px 6px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  background: rgba(0, 0, 0, 0.45);
+  color: #fff;
+  cursor: pointer;
+  backdrop-filter: blur(2px);
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.cover-mini-btn:hover {
+  background: rgba(53, 214, 223, 0.3);
+  border-color: rgba(53, 214, 223, 0.55);
+}
+
+.cover-mini-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
 }
 
 .cover::before {

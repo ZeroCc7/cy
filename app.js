@@ -369,6 +369,9 @@ function createBlankScript() {
     wbConversation: [],
     outlineConversation: [],
     aiConversation: [],
+    bookTitle: "",
+    coverPrompt: "",
+    coverImageUrl: "",
   };
 }
 
@@ -439,24 +442,46 @@ function renderScriptGrid(scripts) {
   }
   return `
     <section class="scripts-grid">
-      ${scripts.map((script) => `
-        <article class="script-card">
-          <div class="cover" style="background:${coverGradient(script.name)}">
-            <div class="cover-texture"></div>
-            <span class="status-label">${statusText(script.status)}</span>
-            <span class="cover-letter">${escapeHtml(firstChar(script.name))}</span>
-          </div>
-          <div class="card-body">
-            <h3 style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(script.name)}</h3>
-            <div class="meta">第 ${script.currentStep || 1} 步 · ${escapeHtml((script.updatedAt || script.createdAt || "").slice(0, 10))}</div>
-            <div class="card-actions">
-              <button class="primary-button violet" style="flex:1" type="button" data-action="open-script" data-id="${script.id}">打开</button>
-              <button class="danger-button" type="button" data-action="request-delete" data-id="${script.id}" aria-label="删除">🗑</button>
-            </div>
-          </div>
-        </article>
-      `).join("")}
+      ${scripts.map((script) => renderBookCard(script)).join("")}
     </section>
+  `;
+}
+
+function renderBookCard(script) {
+  const coverTitle = script.bookTitle || (script.name || "").slice(0, 6) || "未命名";
+  const step = script.currentStep || 1;
+  const date = (script.updatedAt || script.createdAt || "").slice(0, 10);
+  const isTitleGen = script._bookTitleGenerating;
+  const isCoverGen = script._coverGenerating;
+
+  const coverInner = script.coverImageUrl
+    ? `<img class="cover-img" src="${escapeAttr(script.coverImageUrl)}" alt="${escapeAttr(coverTitle)}" />`
+    : `<div class="cover-texture"></div><span class="cover-title">${escapeHtml(coverTitle)}</span>`;
+
+  const genOverlay = isCoverGen
+    ? `<div class="cover-gen-overlay"><div class="spinner" style="width:30px;height:30px;border-width:2px"></div><span>生成封面…</span></div>`
+    : "";
+
+  return `
+    <article class="script-card">
+      <div class="cover" style="background:${coverGradient(script.name)}">
+        ${coverInner}
+        ${genOverlay}
+        <span class="status-label">${statusText(script.status)}</span>
+        <div class="cover-hover-actions">
+          <button class="cover-mini-btn" type="button" data-action="gen-book-title" data-id="${script.id}"${isTitleGen ? " disabled" : ""}>${isTitleGen ? "生成中…" : "✦ 书名"}</button>
+          <button class="cover-mini-btn" type="button" data-action="gen-book-cover" data-id="${script.id}"${isCoverGen ? " disabled" : ""}>✦ 封面</button>
+        </div>
+      </div>
+      <div class="card-body">
+        <h3 style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(script.bookTitle || script.name)}</h3>
+        <div class="meta">第 ${step} 步 · ${escapeHtml(date)}</div>
+        <div class="card-actions">
+          <button class="primary-button violet" style="flex:1" type="button" data-action="open-script" data-id="${script.id}">打开</button>
+          <button class="danger-button" type="button" data-action="request-delete" data-id="${script.id}" aria-label="删除">🗑</button>
+        </div>
+      </div>
+    </article>
   `;
 }
 
@@ -1580,6 +1605,49 @@ function onClick(event) {
     }
     state.selectedEpisodeId = target?.episodes?.[0]?.id || "";
     render();
+  }
+
+  if (action === "gen-book-title") {
+    const id = button.dataset.id;
+    const script = state.scripts.find((s) => s.id === id);
+    if (!script || script._bookTitleGenerating) return;
+    script._bookTitleGenerating = true;
+    render();
+    fetch(`/api/project/${id}/generate-book-title`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title: script.name, worldbuilding: script.worldbuilding || "" }),
+    })
+      .then((r) => r.json())
+      .then((data) => {
+        script.bookTitle = data.bookTitle || script.bookTitle;
+        script.coverPrompt = data.coverPrompt || script.coverPrompt;
+        script._bookTitleGenerating = false;
+        persist();
+        render();
+      })
+      .catch(() => { script._bookTitleGenerating = false; render(); });
+  }
+
+  if (action === "gen-book-cover") {
+    const id = button.dataset.id;
+    const script = state.scripts.find((s) => s.id === id);
+    if (!script || script._coverGenerating) return;
+    script._coverGenerating = true;
+    render();
+    fetch(`/api/project/${id}/generate-cover`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ coverPrompt: script.coverPrompt || "", bookTitle: script.bookTitle || script.name }),
+    })
+      .then((r) => r.json())
+      .then((data) => {
+        script.coverImageUrl = data.coverImageUrl || script.coverImageUrl;
+        script._coverGenerating = false;
+        persist();
+        render();
+      })
+      .catch(() => { script._coverGenerating = false; render(); });
   }
 
   if (action === "back-list") {
@@ -3720,6 +3788,9 @@ function serverProjectToScript(data) {
       appliedToContent: m.appliedToContent || false,
     })),
     worldbuilding: data.worldbuilding || "",
+    bookTitle: data.bookTitle || "",
+    coverPrompt: data.coverPrompt || "",
+    coverImageUrl: data.coverImageUrl || "",
     wbConversation: [],
     outlineConversation: [],
     _chatStarted: (data.messages || []).length > 0,
@@ -3735,6 +3806,9 @@ function scriptToServerPayload(script) {
     phase: stepToPhase(script.maxStep || script.currentStep),
     requirements: "",
     worldbuilding: script.worldbuilding || "",
+    bookTitle: script.bookTitle || "",
+    coverPrompt: script.coverPrompt || "",
+    coverImageUrl: script.coverImageUrl || "",
     outlinePlans: script.storyOutline.plans.length ? script.storyOutline.plans : undefined,
     outline: script.storyOutline.plans[script.storyOutline.selectedPlanIndex]?.content
       || script.storyOutline.plans[0]?.content || "",
