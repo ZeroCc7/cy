@@ -370,6 +370,42 @@ def _load_proj(pid: str) -> dict:
     return _row_to_proj(res.data)
 
 
+def _db_add_char_image(pid: str, cid: str, img_id: str, url: str):
+    """把新生成/上传的角色图直接写进 DB，使图片不依赖前端 persist 即可持久化。"""
+    try:
+        res = db.table("projects").select("characters").eq("id", pid).maybe_single().execute()
+        chars = (res.data or {}).get("characters") or []
+        for c in chars:
+            if str(c.get("id")) == str(cid):
+                imgs = c.get("images") or []
+                imgs.append({"id": img_id, "url": url})
+                c["images"] = imgs
+                if not c.get("imageUrl"):
+                    c["imageUrl"] = url
+                now = datetime.now().strftime("%Y-%m-%d %H:%M")
+                db.table("projects").update({"characters": chars, "updated": now}).eq("id", pid).execute()
+                return
+    except Exception:
+        pass  # 写库失败不阻断图片返回；前端 persist 仍是兜底
+
+
+def _db_remove_char_image(pid: str, cid: str, img_id: str):
+    """从 DB 角色 images 数组里移除一张图。"""
+    try:
+        res = db.table("projects").select("characters").eq("id", pid).maybe_single().execute()
+        chars = (res.data or {}).get("characters") or []
+        for c in chars:
+            if str(c.get("id")) == str(cid):
+                imgs = [im for im in (c.get("images") or []) if str(im.get("id")) != str(img_id)]
+                c["images"] = imgs
+                c["imageUrl"] = imgs[0]["url"] if imgs else ""
+                now = datetime.now().strftime("%Y-%m-%d %H:%M")
+                db.table("projects").update({"characters": chars, "updated": now}).eq("id", pid).execute()
+                return
+    except Exception:
+        pass
+
+
 def _save_proj(data: dict) -> str:
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
     pid = data.get("id") or datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -588,6 +624,7 @@ async def upload_character_image(pid: str, cid: str, file: UploadFile = File(...
         file_options={"content-type": "image/webp", "upsert": "false"},
     )
     url = db.storage.from_("character-images").get_public_url(path)
+    _db_add_char_image(pid, cid, img_id, url)
     return {"url": url, "imgId": img_id}
 
 
@@ -636,6 +673,7 @@ async def generate_character_image(pid: str, cid: str, req: Request):
         file_options={"content-type": "image/webp", "upsert": "false"},
     )
     public_url = db.storage.from_("character-images").get_public_url(path)
+    _db_add_char_image(pid, cid, img_id, public_url)
     return {"url": public_url, "imgId": img_id}
 
 
@@ -646,6 +684,7 @@ async def delete_character_image(pid: str, cid: str, img_id: str):
         db.storage.from_("character-images").remove([path])
     except Exception:
         pass  # best-effort; storage orphans are acceptable
+    _db_remove_char_image(pid, cid, img_id)
     return {"ok": True}
 
 
