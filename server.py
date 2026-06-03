@@ -661,6 +661,56 @@ async def generate_book_title(pid: str, req: Request):
     return {"bookTitle": book_title, "coverPrompt": cover_prompt}
 
 
+@app.post("/api/project/{pid}/generate-cover")
+async def generate_project_cover(pid: str, req: Request):
+    import time as _time
+    body = await req.json()
+    cover_prompt = (body.get("coverPrompt") or "").strip()
+    book_title   = (body.get("bookTitle") or "").strip()
+
+    if not cover_prompt:
+        cover_prompt = f"{book_title}，书籍封面插画，竖版构图，精致细腻" if book_title else "精美书籍封面插画，竖版构图"
+
+    def _dashscope_gen() -> str:
+        msg = DSMessage(role="user", content=[{"text": cover_prompt}])
+        task = DSImageGen.async_call(
+            model="wan2.7-image-pro",
+            api_key=DASHSCOPE_API_KEY,
+            messages=[msg],
+            watermark=False,
+            n=1,
+            size="512*768",
+        )
+        result = DSImageGen.wait(task=task, api_key=DASHSCOPE_API_KEY)
+        if result.output.task_status != "SUCCEEDED":
+            raise RuntimeError(f"封面生成失败：{result.output.task_status}")
+        for choice in result.output.choices:
+            for item in choice["message"]["content"]:
+                if item.get("type") == "image":
+                    return item["image"]
+        raise RuntimeError("未获取到封面图 URL")
+
+    image_url = await asyncio.to_thread(_dashscope_gen)
+    async with httpx.AsyncClient(timeout=60) as hc:
+        img_data = (await hc.get(image_url)).content
+
+    img_id = str(int(_time.time() * 1000))
+    path = f"{pid}/cover_{img_id}.webp"
+    db.storage.from_("character-images").upload(
+        path, img_data,
+        file_options={"content-type": "image/webp", "upsert": "false"},
+    )
+    public_url = db.storage.from_("character-images").get_public_url(path)
+
+    now = datetime.now().strftime("%Y-%m-%d %H:%M")
+    db.table("projects").update({
+        "cover_image_url": public_url,
+        "updated":         now,
+    }).eq("id", pid).execute()
+
+    return {"coverImageUrl": public_url}
+
+
 # ── Episode Plans ────────────────────────────────────────────────────────────
 
 @app.post("/api/project/{pid}/generate-episode-plans")
