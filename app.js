@@ -1612,6 +1612,49 @@ function onClick(event) {
     render();
   }
 
+  if (action === "gen-book-title") {
+    const id = button.dataset.id;
+    const script = state.scripts.find((s) => s.id === id);
+    if (!script || script._bookTitleGenerating) return;
+    script._bookTitleGenerating = true;
+    render();
+    fetch(`/api/project/${id}/generate-book-title`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title: script.name, worldbuilding: script.worldbuilding || "" }),
+    })
+      .then((r) => r.json())
+      .then((data) => {
+        script.bookTitle = data.bookTitle || script.bookTitle;
+        script.coverPrompt = data.coverPrompt || script.coverPrompt;
+        script._bookTitleGenerating = false;
+        persist();
+        render();
+      })
+      .catch(() => { script._bookTitleGenerating = false; render(); });
+  }
+
+  if (action === "gen-book-cover") {
+    const id = button.dataset.id;
+    const script = state.scripts.find((s) => s.id === id);
+    if (!script || script._coverGenerating) return;
+    script._coverGenerating = true;
+    render();
+    fetch(`/api/project/${id}/generate-cover`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ coverPrompt: script.coverPrompt || "", bookTitle: script.bookTitle || script.name }),
+    })
+      .then((r) => r.json())
+      .then((data) => {
+        script.coverImageUrl = data.coverImageUrl || script.coverImageUrl;
+        script._coverGenerating = false;
+        persist();
+        render();
+      })
+      .catch(() => { script._coverGenerating = false; render(); });
+  }
+
   if (action === "back-list") {
     state.view = "list";
     render();
