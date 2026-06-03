@@ -3730,6 +3730,9 @@ function serverSummaryToScript(row) {
     characters: [],
     episodes: [],
     aiConversation: [],
+    bookTitle: row.bookTitle || "",
+    coverPrompt: "",
+    coverImageUrl: row.coverImageUrl || "",
   };
 }
 

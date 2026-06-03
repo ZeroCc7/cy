@@ -356,7 +356,7 @@ async def project_save(req: Request):
 @app.get("/api/projects")
 async def projects_list():
     res = db.table("projects").select(
-        "id,title,phase,episode_count,episodes_done,created,updated"
+        "id,title,phase,episode_count,episodes_done,created,updated,book_title,cover_image_url"
     ).order("updated", desc=True).execute()
     return JSONResponse([{
         "id":           r["id"],
@@ -366,6 +366,8 @@ async def projects_list():
         "created":      r.get("created", ""),
         "episodeCount": r.get("episode_count", 0),
         "episodesDone": r.get("episodes_done", 0),
+        "bookTitle":     r.get("book_title", "") or "",
+        "coverImageUrl": r.get("cover_image_url", "") or "",
     } for r in (res.data or [])])
 
 
