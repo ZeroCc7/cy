@@ -307,9 +307,6 @@ def _row_to_proj(row: dict) -> dict:
         "episodes":     row.get("episodes") or {},
         "characters":    row.get("characters") or [],
         "episodePlans":  row.get("episode_plans") or {},
-        "bookTitle":     row.get("book_title", "") or "",
-        "coverPrompt":   row.get("cover_prompt", "") or "",
-        "coverImageUrl": row.get("cover_image_url", "") or "",
         "created":       row.get("created", ""),
         "updated":       row.get("updated", ""),
     }
@@ -339,10 +336,7 @@ def _save_proj(data: dict) -> str:
         "messages":      data.get("messages", []),
         "episodes":      data.get("episodes", {}),
         "characters":    data.get("characters", []),
-        "episode_plans":    data.get("episodePlans", {}),
-        "book_title":      data.get("bookTitle", ""),
-        "cover_prompt":    data.get("coverPrompt", ""),
-        "cover_image_url": data.get("coverImageUrl", ""),
+        "episode_plans": data.get("episodePlans", {}),
         "created":       data.get("created") or now,
         "updated":       now,
     }).execute()
@@ -609,106 +603,6 @@ async def delete_character_image(pid: str, cid: str, img_id: str):
     except Exception:
         pass  # best-effort; storage orphans are acceptable
     return {"ok": True}
-
-
-@app.post("/api/project/{pid}/generate-book-title")
-async def generate_book_title(pid: str, req: Request):
-    body = await req.json()
-    title = body.get("title", "").strip()
-    worldbuilding = (body.get("worldbuilding") or "").strip()[:400]
-
-    context = f"剧本名：{title}"
-    if worldbuilding:
-        context += f"\n世界观简介：{worldbuilding}"
-
-    system = (
-        "你是一位资深书名顾问。根据用户提供的剧本信息，完成两件事：\n"
-        "1. 生成一个2-4个汉字的书名，简洁有力，富有意境，契合题材风格，不要标点符号。\n"
-        "2. 根据题材（古风/都市/科幻/悬疑/玄幻等）生成一段封面插画提示词，"
-        "描述封面画面内容，以"书籍封面插画，竖版构图，精致细腻"结尾。\n\n"
-        "只返回 JSON，格式：{\"bookTitle\": \"xxx\", \"coverPrompt\": \"xxx\"}"
-    )
-
-    def _call():
-        resp = client.chat.completions.create(
-            model=MODEL,
-            messages=[
-                {"role": "system", "content": system},
-                {"role": "user", "content": context},
-            ],
-            max_tokens=300,
-            temperature=0.9,
-        )
-        return resp.choices[0].message.content or ""
-
-    raw = await asyncio.to_thread(_call)
-
-    match = re.search(r'\{.*\}', raw, re.DOTALL)
-    if not match:
-        raise HTTPException(500, f"模型返回格式错误：{raw[:100]}")
-    data = json.loads(match.group())
-
-    book_title   = str(data.get("bookTitle", "")).strip()[:8]
-    cover_prompt = str(data.get("coverPrompt", "")).strip()
-
-    now = datetime.now().strftime("%Y-%m-%d %H:%M")
-    db.table("projects").update({
-        "book_title":   book_title,
-        "cover_prompt": cover_prompt,
-        "updated":      now,
-    }).eq("id", pid).execute()
-
-    return {"bookTitle": book_title, "coverPrompt": cover_prompt}
-
-
-@app.post("/api/project/{pid}/generate-cover")
-async def generate_project_cover(pid: str, req: Request):
-    import time as _time
-    body = await req.json()
-    cover_prompt = (body.get("coverPrompt") or "").strip()
-    book_title   = (body.get("bookTitle") or "").strip()
-
-    if not cover_prompt:
-        cover_prompt = f"{book_title}，书籍封面插画，竖版构图，精致细腻" if book_title else "精美书籍封面插画，竖版构图"
-
-    def _dashscope_gen() -> str:
-        msg = DSMessage(role="user", content=[{"text": cover_prompt}])
-        task = DSImageGen.async_call(
-            model="wan2.7-image-pro",
-            api_key=DASHSCOPE_API_KEY,
-            messages=[msg],
-            watermark=False,
-            n=1,
-            size="512*768",
-        )
-        result = DSImageGen.wait(task=task, api_key=DASHSCOPE_API_KEY)
-        if result.output.task_status != "SUCCEEDED":
-            raise RuntimeError(f"封面生成失败：{result.output.task_status}")
-        for choice in result.output.choices:
-            for item in choice["message"]["content"]:
-                if item.get("type") == "image":
-                    return item["image"]
-        raise RuntimeError("未获取到封面图 URL")
-
-    image_url = await asyncio.to_thread(_dashscope_gen)
-    async with httpx.AsyncClient(timeout=60) as hc:
-        img_data = (await hc.get(image_url)).content
-
-    img_id = str(int(_time.time() * 1000))
-    path = f"{pid}/cover_{img_id}.webp"
-    db.storage.from_("character-images").upload(
-        path, img_data,
-        file_options={"content-type": "image/webp", "upsert": "false"},
-    )
-    public_url = db.storage.from_("character-images").get_public_url(path)
-
-    now = datetime.now().strftime("%Y-%m-%d %H:%M")
-    db.table("projects").update({
-        "cover_image_url": public_url,
-        "updated":         now,
-    }).eq("id", pid).execute()
-
-    return {"coverImageUrl": public_url}
 
 
 # ── Episode Plans ────────────────────────────────────────────────────────────
