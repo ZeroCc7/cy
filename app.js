@@ -978,7 +978,7 @@ function renderStepFour(script) {
   }
   return `
     ${renderStepHead(4, "搭建角色关系", "角色小传可以就地编辑，后续会作为生成依据。", `<button class="primary-button" type="button" data-action="confirm-characters">✳ 确认角色，生成分集</button>`)}
-    <section class="panel panel-pad">
+    <section class="panel panel-pad characters-panel">
       <div class="panel-head">
         <div class="title-row"><h3>角色设定</h3><span class="muted">共 ${script.characters.length} 位角色</span></div>
         <div class="chip-line">
@@ -1030,9 +1030,13 @@ function renderRoleCard(character) {
       ? `<img class="char-img-main clickable" src="${escapeAttr(activeImg.url)}" alt="${escapeAttr(character.name)}" data-action="preview-image" data-url="${escapeAttr(activeImg.url)}" />`
       : `<div class="char-img-main is-placeholder"><span>${escapeHtml(firstChar(character.name))}</span></div>`;
 
-  const thumbs = imgs.length > 1 ? `
+  const thumbs = imgs.length > 0 ? `
     <div class="char-img-thumbs">
-      ${imgs.map((img, i) => `<button class="char-thumb ${i === activeIdx ? "active" : ""}" type="button" data-action="char-select-img" data-char-id="${character.id}" data-idx="${i}"><img src="${escapeAttr(img.url)}" /></button>`).join("")}
+      ${imgs.map((img, i) => `
+        <div class="char-thumb-wrap ${i === activeIdx ? "active" : ""}">
+          <button class="char-thumb" type="button" data-action="char-select-img" data-char-id="${character.id}" data-idx="${i}"><img src="${escapeAttr(img.url)}" /></button>
+          <button class="char-thumb-del" type="button" data-action="delete-char-image" data-char-id="${character.id}" data-img-id="${escapeAttr(img.id)}" title="删除">×</button>
+        </div>`).join("")}
     </div>` : "";
 
   const fields = [
@@ -1047,10 +1051,6 @@ function renderRoleCard(character) {
         <div class="char-img-col">
           ${imgArea}
           ${thumbs}
-          <div class="char-img-btns">
-            <button class="ghost-button" type="button" data-action="generate-char-image" data-char-id="${character.id}"${isImgGen ? " disabled" : ""}>✦ 生成</button>
-            <label class="ghost-button char-upload-label">↑ 上传<input type="file" accept="image/*" data-action="upload-char-image" data-char-id="${character.id}" style="display:none"></label>
-          </div>
         </div>
         <div class="char-info-col">
           <div class="char-name-row">
@@ -1063,6 +1063,8 @@ function renderRoleCard(character) {
         </div>
       </div>
       <div class="char-card-footer">
+        <button class="ghost-button" type="button" data-action="generate-char-image" data-char-id="${character.id}"${isImgGen ? " disabled" : ""}>✦ 生成图</button>
+        <label class="ghost-button char-upload-label">↑ 上传图<input type="file" accept="image/*" data-action="upload-char-image" data-char-id="${character.id}" style="display:none"></label>
         <button class="ghost-button" type="button" data-action="open-char-edit" data-char-id="${character.id}">✎ 编辑</button>
       </div>
     </article>`;
@@ -1404,7 +1406,16 @@ function renderPortal() {
       <button type="button" data-action="rewrite-selection" data-mode="tense">更紧张</button>
     </div>
   ` : "";
-  portal.innerHTML = `${toasts ? `<div class="toast-stack">${toasts}</div>` : ""}${modal}${toolbar}`;
+  const projectLoader = state._projectLoading ? `
+    <div class="project-loader">
+      <div class="project-loader-box">
+        <div class="project-loader-rings">
+          <span></span><span></span><span></span>
+        </div>
+        <p class="project-loader-text">正在加载剧本…</p>
+      </div>
+    </div>` : "";
+  portal.innerHTML = `${toasts ? `<div class="toast-stack">${toasts}</div>` : ""}${modal}${toolbar}${projectLoader}`;
   portal.onclick = onClick;
 }
 
@@ -1552,6 +1563,7 @@ function onClick(event) {
     state.modal = null;
     const target = state.scripts.find((s) => s.id === id);
     if (target && !target._serverLoaded) {
+      state._projectLoading = true;
       render();
       fetch(`/api/project/${id}`)
         .then((r) => r.json())
@@ -1560,9 +1572,10 @@ function onClick(event) {
           const idx = state.scripts.findIndex((s) => s.id === id);
           if (idx !== -1) state.scripts[idx] = full;
           state.selectedEpisodeId = full.episodes?.[0]?.id || "";
+          state._projectLoading = false;
           render();
         })
-        .catch(() => render());
+        .catch(() => { state._projectLoading = false; render(); });
       return;
     }
     state.selectedEpisodeId = target?.episodes?.[0]?.id || "";
@@ -3651,7 +3664,9 @@ function serverProjectToScript(data) {
     appearance: c.appearance || "",
     background: "",
     imageUrl: c.imageUrl || "",
-    images: c.imageUrl ? [{ id: uid(), url: c.imageUrl }] : [],
+    images: Array.isArray(c.images) && c.images.length
+      ? c.images.map((img) => ({ id: img.id || uid(), url: img.url }))
+      : (c.imageUrl ? [{ id: uid(), url: c.imageUrl }] : []),
     _genPrompt: c.genPrompt || "",
   }));
 
@@ -3743,7 +3758,8 @@ function scriptToServerPayload(script) {
       personality: Array.isArray(c.personality) ? c.personality.join("、") : (c.personality || ""),
       age: c.age || "",
       appearance: c.appearance || "",
-      imageUrl: c.imageUrl || c.images?.[0]?.url || "",
+      imageUrl: c.images?.[0]?.url || c.imageUrl || "",
+      images: (c.images || []).map((img) => ({ id: img.id, url: img.url })),
       genPrompt: c._genPrompt || "",
     })),
     episodePlans: Object.fromEntries(

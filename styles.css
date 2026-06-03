@@ -229,7 +229,14 @@ textarea {
   width: min(1580px, calc(100vw - 24px));
   margin: 12px auto 0;
   height: calc(100vh - var(--nav-h) - 12px);
-  background: rgba(20, 21, 25, 0.92);
+  background:
+    url('./images/card-texture.png'),
+    radial-gradient(ellipse 50% 35% at 5%  8%,  rgba(139, 174, 141, 0.18), transparent 65%),
+    radial-gradient(ellipse 45% 35% at 95% 90%, rgba(200, 155, 82, 0.15),  transparent 65%),
+    radial-gradient(ellipse 40% 30% at 88% 5%,  rgba(53, 214, 223, 0.10),  transparent 60%),
+    rgba(18, 19, 22, 0.96);
+  background-size: 256px 256px, cover, cover, cover, auto;
+  background-repeat: repeat, no-repeat, no-repeat, no-repeat, no-repeat;
   border: 1px solid rgba(255, 255, 255, 0.06);
   border-radius: 8px 8px 0 0;
   padding: 16px 20px 0;
@@ -237,6 +244,7 @@ textarea {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  position: relative;
 }
 
 .list-head,
@@ -766,6 +774,27 @@ h3 {
   display: flex;
   flex-direction: column;
 }
+
+/* 古风氛围背景层 —— 伪元素不影响布局和交互 */
+.stage::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  /* 纹理图 + 彩色墨晕渐变叠加 */
+  background-image:
+    url('./images/card-texture.png'),
+    radial-gradient(ellipse 55% 40% at 8% 10%,  rgba(139, 174, 141, 0.18), transparent 70%),
+    radial-gradient(ellipse 50% 38% at 92% 88%, rgba(200, 155, 82, 0.15),  transparent 70%),
+    radial-gradient(ellipse 36% 30% at 85% 6%,  rgba(53, 214, 223, 0.10),  transparent 60%);
+  background-size: 256px 256px, cover, cover, cover;
+  background-repeat: repeat, no-repeat, no-repeat, no-repeat;
+  mix-blend-mode: overlay;
+}
+
+/* 让 stage 直接子内容浮在背景层之上 */
+.stage > * { position: relative; z-index: 1; }
 
 .stage-chat {
   padding: 0;
@@ -1400,18 +1429,50 @@ img.chat-avatar.ai-av {
 }
 
 .spinner {
-  width: 40px;
-  height: 40px;
+  position: relative;
+  width: 44px;
+  height: 44px;
   border-radius: 50%;
-  border: 3px solid rgba(53, 214, 223, 0.18);
+  border: 3px solid rgba(53, 214, 223, 0.14);
   border-top-color: var(--cyan);
   border-right-color: var(--gold);
-  animation: spin 1s linear infinite;
+  animation: spin 0.9s cubic-bezier(0.62, 0.1, 0.4, 0.92) infinite;
   box-shadow: 0 0 34px rgba(53, 214, 223, 0.2);
+}
+/* 内层反向旋转环 */
+.spinner::before {
+  content: "";
+  position: absolute;
+  inset: 15%;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  border-bottom-color: var(--gold);
+  border-left-color: rgba(255, 255, 255, 0.5);
+  animation: spin-reverse 1.3s linear infinite;
+}
+/* 中心呼吸光点 */
+.spinner::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: 14%;
+  height: 14%;
+  border-radius: 50%;
+  background: var(--gold);
+  box-shadow: 0 0 10px 2px rgba(200, 155, 82, 0.7);
+  animation: core-pulse 1.3s ease-in-out infinite;
 }
 
 @keyframes spin {
   to { transform: rotate(360deg); }
+}
+@keyframes spin-reverse {
+  to { transform: rotate(-360deg); }
+}
+@keyframes core-pulse {
+  0%, 100% { opacity: 0.5; transform: scale(0.65); }
+  50%      { opacity: 1;   transform: scale(1.2); }
 }
 
 /* Logo glow-breathe — CSS only (immune to re-render) */
@@ -1459,7 +1520,17 @@ img.chat-avatar.ai-av {
   white-space: pre-line;
 }
 
+/* 流式生成的“打字光标” */
+.stream-text::after {
+  content: "▍";
+  margin-left: 1px;
+  color: var(--gold);
+  font-weight: 700;
+  animation: blink 0.8s step-end infinite;
+}
+
 .progress-line {
+  position: relative;
   margin-top: 16px;
   height: 5px;
   border-radius: 999px;
@@ -1471,7 +1542,31 @@ img.chat-avatar.ai-av {
   display: block;
   height: 100%;
   border-radius: inherit;
-  background: linear-gradient(90deg, var(--cyan), var(--gold));
+  background: linear-gradient(90deg, var(--cyan), var(--gold), var(--cyan));
+  background-size: 200% 100%;
+  box-shadow: 0 0 12px rgba(53, 214, 223, 0.5);
+  transition: width 0.4s ease;
+  animation: progress-flow 2.2s linear infinite;
+}
+
+/* 扫光高光，从左到右循环掠过进度条 */
+.progress-line::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(100deg, transparent 30%, rgba(255, 255, 255, 0.4) 50%, transparent 70%);
+  background-size: 220% 100%;
+  animation: progress-sheen 1.8s ease-in-out infinite;
+  pointer-events: none;
+}
+
+@keyframes progress-flow {
+  to { background-position: -200% 0; }
+}
+@keyframes progress-sheen {
+  0%   { background-position: 160% 0; }
+  100% { background-position: -160% 0; }
 }
 
 .editor {
@@ -1487,22 +1582,43 @@ img.chat-avatar.ai-av {
 }
 
 /* ── 角色列表网格 ── */
+/* 角色面板：占据可用高度，内部网格滚动，避免整体超出视口 */
+.characters-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  /* 比内容高度再低一些，留出 panel 头部/内边距/外边距，允许网格内部出现滚动条 */
+  max-height: calc(var(--content-h) - 96px);
+}
+.characters-panel .panel-head {
+  flex-shrink: 0;
+}
+
 .roles-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
   gap: 16px;
   padding-right: 6px;
-  max-height: var(--content-h);
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
 }
 
 /* ── 角色展示卡片 ── */
-.role-card { padding: 0; overflow: hidden; }
+.role-card {
+  padding: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  max-height: 380px;   /* 整张卡片高度封顶，底部「编辑」按钮始终可见 */
+}
 
 .char-card-body {
   display: flex;
   gap: 0;
-  min-height: 260px;
+  flex: 1 1 auto;
+  min-height: 0;       /* 允许收缩，把空间让给底部按钮；溢出由信息列内部滚动 */
+  overflow: hidden;
 }
 
 /* 左侧图片列 */
@@ -1517,11 +1633,11 @@ img.chat-avatar.ai-av {
 
 .char-img-main {
   width: 100%;
-  flex: 1;
+  height: 220px;
+  flex-shrink: 0;
   object-fit: cover;
+  object-position: top center;
   display: block;
-  min-height: 180px;
-  max-height: 280px;
 }
 .char-img-main.is-placeholder {
   display: flex;
@@ -1546,6 +1662,13 @@ img.chat-avatar.ai-av {
   overflow-x: auto;
   background: rgba(0,0,0,0.15);
 }
+.char-thumb-wrap {
+  position: relative;
+  flex-shrink: 0;
+}
+.char-thumb-wrap.active .char-thumb {
+  border-color: #27e4f2;
+}
 .char-thumb {
   width: 36px;
   height: 36px;
@@ -1553,10 +1676,27 @@ img.chat-avatar.ai-av {
   overflow: hidden;
   border: 2px solid transparent;
   padding: 0;
-  flex-shrink: 0;
+  display: block;
 }
 .char-thumb img { width: 100%; height: 100%; object-fit: cover; }
-.char-thumb.active { border-color: #27e4f2; }
+.char-thumb-del {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: rgba(220, 50, 50, 0.9);
+  color: #fff;
+  font-size: 10px;
+  line-height: 16px;
+  text-align: center;
+  padding: 0;
+  border: none;
+  cursor: pointer;
+  display: none;
+}
+.char-thumb-wrap:hover .char-thumb-del { display: block; }
 
 .char-img-btns {
   display: flex;
@@ -1620,7 +1760,10 @@ img.chat-avatar.ai-av {
   padding: 8px 12px;
   border-top: 1px solid rgba(255,255,255,0.07);
   display: flex;
+  align-items: center;
+  gap: 6px;
   justify-content: flex-end;
+  flex-shrink: 0;
 }
 
 /* ── 角色 AI 背景对话（在 modal 内） ── */
@@ -2152,6 +2295,78 @@ img.chat-avatar.ai-av {
 }
 
 
+/* ── 项目加载遮罩 ── */
+.project-loader {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(8, 9, 7, 0.72);
+  backdrop-filter: blur(6px);
+  animation: loader-fade-in 0.2s ease;
+}
+
+@keyframes loader-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.project-loader-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 24px;
+}
+
+/* 三层同心旋转环 */
+.project-loader-rings {
+  position: relative;
+  width: 72px;
+  height: 72px;
+}
+
+.project-loader-rings span {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 2px solid transparent;
+}
+
+.project-loader-rings span:nth-child(1) {
+  border-top-color: var(--gold);
+  border-right-color: rgba(200, 155, 82, 0.3);
+  animation: spin 1.1s cubic-bezier(0.62, 0.1, 0.4, 0.92) infinite;
+}
+
+.project-loader-rings span:nth-child(2) {
+  inset: 10px;
+  border-top-color: var(--cyan);
+  border-left-color: rgba(53, 214, 223, 0.3);
+  animation: spin-reverse 1.4s linear infinite;
+}
+
+.project-loader-rings span:nth-child(3) {
+  inset: 22px;
+  border-top-color: rgba(139, 174, 141, 0.9);
+  animation: spin 0.8s linear infinite;
+  /* 中心光点 */
+  box-shadow: inset 0 0 8px rgba(139, 174, 141, 0.4);
+}
+
+.project-loader-text {
+  font-size: 13px;
+  color: #b9b09f;
+  letter-spacing: 0.05em;
+  animation: loader-blink 1.4s ease-in-out infinite;
+}
+
+@keyframes loader-blink {
+  0%, 100% { opacity: 0.5; }
+  50%       { opacity: 1; }
+}
+
 .toast-stack {
   position: fixed;
   right: 24px;
@@ -2325,7 +2540,6 @@ select:focus,
   box-shadow: 0 10px 22px rgba(139, 174, 141, 0.18);
 }
 
-.list-shell,
 .panel,
 .role-card,
 .outline-card,
@@ -2337,6 +2551,18 @@ select:focus,
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.025), transparent 34%),
     rgba(30, 29, 24, 0.94);
+  border-color: rgba(228, 219, 194, 0.14);
+}
+
+.list-shell {
+  background:
+    url('./images/card-texture.png'),
+    radial-gradient(ellipse 50% 35% at 5%  8%,  rgba(139, 174, 141, 0.18), transparent 65%),
+    radial-gradient(ellipse 45% 35% at 95% 90%, rgba(200, 155, 82, 0.15),  transparent 65%),
+    radial-gradient(ellipse 40% 30% at 88% 5%,  rgba(53, 214, 223, 0.10),  transparent 60%),
+    rgba(22, 21, 17, 0.96);
+  background-size: 256px 256px, cover, cover, cover, auto;
+  background-repeat: repeat, no-repeat, no-repeat, no-repeat, no-repeat;
   border-color: rgba(228, 219, 194, 0.14);
 }
 
@@ -2448,7 +2674,11 @@ select:focus,
 
 .progress-fill,
 .progress-line > span {
-  background: linear-gradient(90deg, #8bae8d, #c8b36a);
+  background: linear-gradient(90deg, #8bae8d, #c8b36a, #8bae8d);
+  background-size: 200% 100%;
+}
+.progress-line > span {
+  box-shadow: 0 0 12px rgba(139, 174, 141, 0.5);
 }
 
 .save-dot {
