@@ -442,24 +442,51 @@ function renderScriptGrid(scripts) {
   }
   return `
     <section class="scripts-grid">
-      ${scripts.map((script) => `
-        <article class="script-card">
-          <div class="cover" style="background:${coverGradient(script.name)}">
-            <div class="cover-texture"></div>
-            <span class="status-label">${statusText(script.status)}</span>
-            <span class="cover-letter">${escapeHtml(firstChar(script.name))}</span>
-          </div>
-          <div class="card-body">
-            <h3 style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(script.name)}</h3>
-            <div class="meta">第 ${script.currentStep || 1} 步 · ${escapeHtml((script.updatedAt || script.createdAt || "").slice(0, 10))}</div>
-            <div class="card-actions">
-              <button class="primary-button violet" style="flex:1" type="button" data-action="open-script" data-id="${script.id}">打开</button>
-              <button class="danger-button" type="button" data-action="request-delete" data-id="${script.id}" aria-label="删除">🗑</button>
-            </div>
-          </div>
-        </article>
-      `).join("")}
+      ${scripts.map((script) => renderBookCard(script)).join("")}
     </section>
+  `;
+}
+
+function renderBookCard(script) {
+  const displayTitle = script.bookTitle || (script.name || "").slice(0, 4) || "未命名";
+  const step = script.currentStep || 1;
+  const date = (script.updatedAt || script.createdAt || "").slice(0, 10);
+  const isTitleGen = script._bookTitleGenerating;
+  const isCoverGen = script._coverGenerating;
+
+  const coverImgHtml = script.coverImageUrl
+    ? `<img class="cover-img" src="${escapeAttr(script.coverImageUrl)}" alt="${escapeAttr(displayTitle)}" />`
+    : `<div class="cover-texture"></div>`;
+
+  const coverGenOverlay = isCoverGen
+    ? `<div class="book-cover-gen-overlay"><div class="spinner" style="width:28px;height:28px;border-width:2px"></div><span>生成封面…</span></div>`
+    : "";
+
+  return `
+    <article class="book-card" data-id="${script.id}">
+      <div class="book-spine" style="background:${coverGradient(script.name)};filter:brightness(0.55)">
+        <span class="spine-title">${escapeHtml(displayTitle)}</span>
+        <span class="spine-step">S${step}</span>
+      </div>
+      <div class="book-cover">
+        <div class="book-cover-bg" style="background:${coverGradient(script.name)}">
+          ${coverImgHtml}
+          ${coverGenOverlay}
+          <span class="book-title-vert">${escapeHtml(displayTitle)}</span>
+          <span class="status-label">${statusText(script.status)}</span>
+        </div>
+        <div class="book-info">
+          <div class="book-meta">第 ${step} 步 · ${escapeHtml(date)}</div>
+          <div class="book-actions">
+            <button class="primary-button" type="button" data-action="open-script" data-id="${script.id}">打开</button>
+            <button class="ghost-button${isTitleGen ? " disabled" : ""}" type="button" data-action="gen-book-title" data-id="${script.id}"${isTitleGen ? " disabled" : ""}>
+              ${isTitleGen ? `<span class="spinner" style="width:12px;height:12px;border-width:1.5px;display:inline-block;vertical-align:middle"></span>` : "✦ 书名"}
+            </button>
+            <button class="ghost-button${isCoverGen ? " disabled" : ""}" type="button" data-action="gen-book-cover" data-id="${script.id}"${isCoverGen ? " disabled" : ""}>✦ 封面</button>
+          </div>
+        </div>
+      </div>
+    </article>
   `;
 }
 
