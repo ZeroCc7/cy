@@ -16,6 +16,9 @@ scripts/
 # 本地图片缓存代理
 images/cache/
 
+# 本地上传附件
+uploads/
+
 # 系统文件
 .DS_Store
 

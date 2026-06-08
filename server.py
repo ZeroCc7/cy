@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from __future__ import annotations
 import asyncio
 import base64
 import hashlib
@@ -16,7 +17,13 @@ from fastapi import FastAPI, File, Request, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse, FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from openai import OpenAI
-from supabase import create_client, Client
+from typing import Any
+from urllib.parse import quote
+try:
+    from supabase import create_client, Client
+except ImportError:  # Supabase is optional when DATABASE_URL is used.
+    create_client = None
+    Client = Any
 from exporter import save_full_script, extract_episode_outlines
 from prompts import (
     CHAT_SYSTEM,
@@ -52,6 +59,13 @@ IMAGE_API_KEY  = os.environ.get("IMAGE_API_KEY") or os.environ["OPENAI_API_KEY"]
 IMAGE_BASE_URL = os.environ.get("IMAGE_BASE_URL", "https://api.openai.com/v1")
 image_client   = OpenAI(api_key=IMAGE_API_KEY, base_url=IMAGE_BASE_URL)
 
+DATABASE_URL = os.environ.get("DATABASE_URL", "").strip()
+USE_POSTGRES = bool(DATABASE_URL)
+ATTACHMENT_STORAGE = os.environ.get("ATTACHMENT_STORAGE", "local").strip().lower()
+SUPABASE_BUCKET = os.environ.get("SUPABASE_BUCKET", "character-images")
+UPLOAD_DIR = Path(os.environ.get("UPLOAD_DIR", "uploads"))
+UPLOAD_URL_PREFIX = os.environ.get("UPLOAD_URL_PREFIX", "/uploads").rstrip("/") or "/uploads"
+
 
 def openai_image_bytes(model: str, prompt: str, size: str = "1024x1536") -> bytes:
     """调用 gpt-image 系列生成图片，返回图片字节。兼容返回 b64_json 或 url 两种代理。"""
@@ -70,15 +84,82 @@ def openai_image_bytes(model: str, prompt: str, size: str = "1024x1536") -> byte
         return httpx.get(url, timeout=60).content
     raise RuntimeError("图片生成失败：未返回图像数据")
 
-db: Client = create_client(
-    os.environ["SUPABASE_URL"],
-    os.environ["SUPABASE_SECRET_KEY"],
-)
+PROJECT_COLUMNS = [
+    "id", "title", "phase", "requirements", "worldbuilding", "outline",
+    "episode_count", "episodes_done", "messages", "episodes", "characters",
+    "episode_plans", "book_title", "cover_prompt", "cover_image_url",
+    "created", "updated",
+]
+PROJECT_JSON_COLUMNS = {"messages", "episodes", "characters", "episode_plans"}
+
+
+def _pg_connect():
+    import psycopg
+    from psycopg.rows import dict_row
+    return psycopg.connect(DATABASE_URL, row_factory=dict_row)
+
+
+def _pg_json_value(key: str, value):
+    if key not in PROJECT_JSON_COLUMNS:
+        return value
+    from psycopg.types.json import Jsonb
+    if value is None:
+        value = [] if key in {"messages", "characters"} else {}
+    return Jsonb(value)
+
+
+def _ensure_pg_schema():
+    with _pg_connect() as conn:
+        conn.execute("""
+        CREATE TABLE IF NOT EXISTS projects (
+            id text PRIMARY KEY,
+            title text NOT NULL DEFAULT '未命名',
+            phase text NOT NULL DEFAULT 'chat',
+            requirements text NOT NULL DEFAULT '',
+            worldbuilding text NOT NULL DEFAULT '',
+            outline text NOT NULL DEFAULT '',
+            episode_count integer NOT NULL DEFAULT 15,
+            episodes_done integer NOT NULL DEFAULT 0,
+            messages jsonb NOT NULL DEFAULT '[]'::jsonb,
+            episodes jsonb NOT NULL DEFAULT '{}'::jsonb,
+            characters jsonb NOT NULL DEFAULT '[]'::jsonb,
+            episode_plans jsonb NOT NULL DEFAULT '{}'::jsonb,
+            book_title text NOT NULL DEFAULT '',
+            cover_prompt text NOT NULL DEFAULT '',
+            cover_image_url text NOT NULL DEFAULT '',
+            created text NOT NULL DEFAULT '',
+            updated text NOT NULL DEFAULT ''
+        )
+        """)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_projects_updated ON projects (updated DESC)")
+
+
+def _parse_project_columns(columns: str = "*") -> list[str]:
+    if not columns or columns == "*":
+        return PROJECT_COLUMNS
+    parsed = [c.strip() for c in columns.split(",") if c.strip()]
+    unknown = [c for c in parsed if c not in PROJECT_COLUMNS]
+    if unknown:
+        raise RuntimeError(f"未知项目字段: {', '.join(unknown)}")
+    return parsed
+
+
+db: Any = None
+if USE_POSTGRES:
+    _ensure_pg_schema()
+elif create_client:
+    db = create_client(
+        os.environ["SUPABASE_URL"],
+        os.environ["SUPABASE_SECRET_KEY"],
+    )
+else:
+    raise RuntimeError("未配置 DATABASE_URL，且 supabase 依赖不可用")
 
 app = FastAPI()
 
-# 进行中的角色图生成任务（key = "pid:cid"），以及任务引用（防止被 GC）
+# 进行中的图片生成任务，以及任务引用（防止被 GC）
 PENDING_CHAR_IMG: set = set()
+PENDING_STORYBOARD_IMG: set = set()
 _BG_TASKS: set = set()
 
 
@@ -88,6 +169,36 @@ def _spawn_bg(coro):
     _BG_TASKS.add(task)
     task.add_done_callback(_BG_TASKS.discard)
     return task
+
+
+async def _image_bytes_from_prompt(model: str, prompt_text: str, size: str = "1024*1440") -> bytes:
+    """Generate one image and return raw bytes, using the same providers as character images."""
+    if model.startswith("gpt-image"):
+        return await asyncio.to_thread(openai_image_bytes, model, prompt_text, size.replace("*", "x"))
+
+    def _dashscope_gen() -> str:
+        msg = DSMessage(role="user", content=[{"text": prompt_text}])
+        task = DSImageGen.async_call(
+            model=model,
+            api_key=DASHSCOPE_API_KEY,
+            messages=[msg],
+            watermark=False,
+            n=1,
+            size=size,
+        )
+        result = DSImageGen.wait(task=task, api_key=DASHSCOPE_API_KEY)
+        if result.output.task_status != "SUCCEEDED":
+            detail = getattr(result.output, "message", "") or getattr(result.output, "code", "")
+            raise RuntimeError(f"图片生成失败：{result.output.task_status} {detail}")
+        for choice in result.output.choices:
+            for item in choice["message"]["content"]:
+                if item.get("type") == "image":
+                    return item["image"]
+        raise RuntimeError("未获取到图片 URL")
+
+    image_url = await asyncio.to_thread(_dashscope_gen)
+    async with httpx.AsyncClient(timeout=120) as hc:
+        return (await hc.get(image_url)).content
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
@@ -149,6 +260,9 @@ def sse_stream(system, messages, max_tokens=4000):
 
 app.mount("/images", StaticFiles(directory="images"), name="images")
 app.mount("/lib", StaticFiles(directory="lib"), name="lib")
+if ATTACHMENT_STORAGE == "local":
+    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    app.mount(UPLOAD_URL_PREFIX, StaticFiles(directory=str(UPLOAD_DIR)), name="uploads")
 
 IMG_CACHE_DIR = Path("images/cache")
 IMG_CACHE_DIR.mkdir(parents=True, exist_ok=True)
@@ -177,6 +291,46 @@ async def img_proxy(u: str):
         media_type="image/webp",
         headers={"Cache-Control": "public, max-age=31536000, immutable"},
     )
+
+
+def _safe_storage_path(path: str) -> str:
+    cleaned = str(path).replace("\\", "/")
+    parts = [part for part in cleaned.split("/") if part and part not in {".", ".."}]
+    if not parts:
+        raise HTTPException(400, "无效附件路径")
+    return "/".join(parts)
+
+
+def _local_upload_url(path: str) -> str:
+    return f"{UPLOAD_URL_PREFIX}/{quote(path, safe='/')}"
+
+
+def _storage_upload(path: str, data: bytes, content_type: str = "image/webp") -> str:
+    path = _safe_storage_path(path)
+    if ATTACHMENT_STORAGE == "local":
+        target = UPLOAD_DIR.joinpath(*path.split("/"))
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(data)
+        return _local_upload_url(path)
+    if not db:
+        raise RuntimeError("Supabase Storage 未初始化")
+    db.storage.from_(SUPABASE_BUCKET).upload(
+        path, data,
+        file_options={"content-type": content_type or "image/webp", "upsert": "false"},
+    )
+    return db.storage.from_(SUPABASE_BUCKET).get_public_url(path)
+
+
+def _storage_remove(path: str):
+    path = _safe_storage_path(path)
+    if ATTACHMENT_STORAGE == "local":
+        try:
+            UPLOAD_DIR.joinpath(*path.split("/")).unlink(missing_ok=True)
+        except Exception:
+            pass
+        return
+    if db:
+        db.storage.from_(SUPABASE_BUCKET).remove([path])
 
 
 @app.get("/")
@@ -375,18 +529,83 @@ def _row_to_proj(row: dict) -> dict:
     }
 
 
+def _project_get(pid: str, columns: str = "*") -> dict | None:
+    if USE_POSTGRES:
+        cols = _parse_project_columns(columns)
+        sql_cols = ", ".join(f'"{c}"' for c in cols)
+        with _pg_connect() as conn:
+            row = conn.execute(f"SELECT {sql_cols} FROM projects WHERE id = %s", (pid,)).fetchone()
+        return dict(row) if row else None
+    res = db.table("projects").select(columns).eq("id", pid).maybe_single().execute()
+    return res.data
+
+
+def _project_update(pid: str, values: dict):
+    if not values:
+        return
+    if USE_POSTGRES:
+        keys = _parse_project_columns(",".join(values.keys()))
+        assignments = ", ".join(f'"{key}" = %s' for key in keys)
+        params = [_pg_json_value(key, values[key]) for key in keys] + [pid]
+        with _pg_connect() as conn:
+            conn.execute(f"UPDATE projects SET {assignments} WHERE id = %s", params)
+        return
+    db.table("projects").update(values).eq("id", pid).execute()
+
+
+def _project_upsert(values: dict):
+    if USE_POSTGRES:
+        keys = _parse_project_columns(",".join(values.keys()))
+        cols = ", ".join(f'"{key}"' for key in keys)
+        placeholders = ", ".join(["%s"] * len(keys))
+        updates = ", ".join(f'"{key}" = EXCLUDED."{key}"' for key in keys if key != "id")
+        params = [_pg_json_value(key, values[key]) for key in keys]
+        with _pg_connect() as conn:
+            conn.execute(
+                f"INSERT INTO projects ({cols}) VALUES ({placeholders}) "
+                f"ON CONFLICT (id) DO UPDATE SET {updates}",
+                params,
+            )
+        return
+    db.table("projects").upsert(values).execute()
+
+
+def _projects_summary_rows() -> list[dict]:
+    fields = "id,title,phase,episode_count,episodes_done,created,updated,book_title,cover_prompt,cover_image_url"
+    if USE_POSTGRES:
+        cols = _parse_project_columns(fields)
+        sql_cols = ", ".join(f'"{c}"' for c in cols)
+        with _pg_connect() as conn:
+            rows = conn.execute(f"SELECT {sql_cols} FROM projects ORDER BY updated DESC").fetchall()
+        return [dict(row) for row in rows]
+    res = db.table("projects").select(fields).order("updated", desc=True).execute()
+    return res.data or []
+
+
+def _project_delete(pid: str):
+    if USE_POSTGRES:
+        with _pg_connect() as conn:
+            conn.execute("DELETE FROM projects WHERE id = %s", (pid,))
+        return
+    db.table("projects").delete().eq("id", pid).execute()
+
+
 def _load_proj(pid: str) -> dict:
-    res = db.table("projects").select("*").eq("id", pid).maybe_single().execute()
-    if not res.data:
+    try:
+        row = _project_get(pid)
+    except Exception as e:
+        print(f"[db] 加载项目失败 {pid}: {e}")
+        raise HTTPException(503, "数据库连接失败，请检查 DATABASE_URL / Postgres 或 Supabase 配置")
+    if not row:
         raise HTTPException(404, "项目不存在")
-    return _row_to_proj(res.data)
+    return _row_to_proj(row)
 
 
 def _db_add_char_image(pid: str, cid: str, img_id: str, url: str):
     """把新生成/上传的角色图直接写进 DB，使图片不依赖前端 persist 即可持久化。"""
     try:
-        res = db.table("projects").select("characters").eq("id", pid).maybe_single().execute()
-        chars = (res.data or {}).get("characters") or []
+        row = _project_get(pid, "characters")
+        chars = (row or {}).get("characters") or []
         for c in chars:
             if str(c.get("id")) == str(cid):
                 imgs = c.get("images") or []
@@ -395,7 +614,7 @@ def _db_add_char_image(pid: str, cid: str, img_id: str, url: str):
                 if not c.get("imageUrl"):
                     c["imageUrl"] = url
                 now = datetime.now().strftime("%Y-%m-%d %H:%M")
-                db.table("projects").update({"characters": chars, "updated": now}).eq("id", pid).execute()
+                _project_update(pid, {"characters": chars, "updated": now})
                 return
     except Exception:
         pass  # 写库失败不阻断图片返回；前端 persist 仍是兜底
@@ -404,16 +623,51 @@ def _db_add_char_image(pid: str, cid: str, img_id: str, url: str):
 def _db_remove_char_image(pid: str, cid: str, img_id: str):
     """从 DB 角色 images 数组里移除一张图。"""
     try:
-        res = db.table("projects").select("characters").eq("id", pid).maybe_single().execute()
-        chars = (res.data or {}).get("characters") or []
+        row = _project_get(pid, "characters")
+        chars = (row or {}).get("characters") or []
         for c in chars:
             if str(c.get("id")) == str(cid):
                 imgs = [im for im in (c.get("images") or []) if str(im.get("id")) != str(img_id)]
                 c["images"] = imgs
                 c["imageUrl"] = imgs[0]["url"] if imgs else ""
                 now = datetime.now().strftime("%Y-%m-%d %H:%M")
-                db.table("projects").update({"characters": chars, "updated": now}).eq("id", pid).execute()
+                _project_update(pid, {"characters": chars, "updated": now})
                 return
+    except Exception:
+        pass
+
+
+def _db_add_storyboard_image(pid: str, ep_num: int, img_id: str, url: str):
+    """把分镜图写进 episode_plans[str(ep_num)].storyboardImages。"""
+    try:
+        row = _project_get(pid, "episode_plans")
+        plans = (row or {}).get("episode_plans") or {}
+        key = str(ep_num)
+        plan = plans.get(key) or {}
+        imgs = plan.get("storyboardImages") or []
+        imgs.append({"id": img_id, "url": url})
+        plan["storyboardImages"] = imgs
+        plans[key] = plan
+        now = datetime.now().strftime("%Y-%m-%d %H:%M")
+        _project_update(pid, {"episode_plans": plans, "updated": now})
+    except Exception:
+        pass
+
+
+def _db_remove_storyboard_image(pid: str, ep_num: int, img_id: str):
+    """从 episode_plans[str(ep_num)].storyboardImages 移除一张图。"""
+    try:
+        row = _project_get(pid, "episode_plans")
+        plans = (row or {}).get("episode_plans") or {}
+        key = str(ep_num)
+        plan = plans.get(key) or {}
+        plan["storyboardImages"] = [
+            im for im in (plan.get("storyboardImages") or [])
+            if str(im.get("id")) != str(img_id)
+        ]
+        plans[key] = plan
+        now = datetime.now().strftime("%Y-%m-%d %H:%M")
+        _project_update(pid, {"episode_plans": plans, "updated": now})
     except Exception:
         pass
 
@@ -422,7 +676,7 @@ def _save_proj(data: dict) -> str:
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
     pid = data.get("id") or datetime.now().strftime("%Y%m%d_%H%M%S")
     episodes_done = len(data.get("episodes", {}))
-    db.table("projects").upsert({
+    _project_upsert({
         "id":            pid,
         "title":         data.get("title", "未命名"),
         "phase":         data.get("phase", "chat"),
@@ -436,9 +690,12 @@ def _save_proj(data: dict) -> str:
         "episodes":      data.get("episodes", {}),
         "characters":    data.get("characters", []),
         "episode_plans": data.get("episodePlans", {}),
+        "book_title":    data.get("bookTitle", ""),
+        "cover_prompt":  data.get("coverPrompt", ""),
+        "cover_image_url": data.get("coverImageUrl", ""),
         "created":       data.get("created") or now,
         "updated":       now,
-    }).execute()
+    })
     return pid
 
 
@@ -451,9 +708,11 @@ async def project_save(req: Request):
 
 @app.get("/api/projects")
 async def projects_list():
-    res = db.table("projects").select(
-        "id,title,phase,episode_count,episodes_done,created,updated,book_title,cover_image_url"
-    ).order("updated", desc=True).execute()
+    try:
+        rows = _projects_summary_rows()
+    except Exception as e:
+        print(f"[db] 项目列表加载失败: {e}")
+        return JSONResponse([], headers={"X-DB-Unavailable": "1"})
     return JSONResponse([{
         "id":           r["id"],
         "title":        r.get("title", "未命名"),
@@ -463,8 +722,9 @@ async def projects_list():
         "episodeCount": r.get("episode_count", 0),
         "episodesDone": r.get("episodes_done", 0),
         "bookTitle":     r.get("book_title", "") or "",
+        "coverPrompt":   r.get("cover_prompt", "") or "",
         "coverImageUrl": r.get("cover_image_url", "") or "",
-    } for r in (res.data or [])])
+    } for r in rows])
 
 
 @app.get("/api/project/{pid}")
@@ -479,30 +739,30 @@ async def project_patch(pid: str, req: Request):
     now   = datetime.now().strftime("%Y-%m-%d %H:%M")
 
     if field == "worldbuilding":
-        db.table("projects").update({"worldbuilding": body["content"], "updated": now}).eq("id", pid).execute()
+        _project_update(pid, {"worldbuilding": body["content"], "updated": now})
     elif field == "outline":
-        db.table("projects").update({"outline": body["content"], "updated": now}).eq("id", pid).execute()
+        _project_update(pid, {"outline": body["content"], "updated": now})
     elif field == "episode":
-        res = db.table("projects").select("episodes").eq("id", pid).maybe_single().execute()
-        if not res.data:
+        row = _project_get(pid, "episodes")
+        if not row:
             raise HTTPException(404, "项目不存在")
-        episodes = res.data.get("episodes") or {}
+        episodes = row.get("episodes") or {}
         episodes[str(body["num"])] = body["content"]
-        db.table("projects").update({
+        _project_update(pid, {
             "episodes":      episodes,
             "episodes_done": len(episodes),
             "updated":       now,
-        }).eq("id", pid).execute()
+        })
     elif field == "chat":
-        db.table("projects").update({"messages": body["messages"], "updated": now}).eq("id", pid).execute()
+        _project_update(pid, {"messages": body["messages"], "updated": now})
     elif field == "characters":
-        db.table("projects").update({
+        _project_update(pid, {
             "characters": body["characters"], "updated": now,
-        }).eq("id", pid).execute()
+        })
     elif field == "episode_plans":
-        db.table("projects").update({
+        _project_update(pid, {
             "episode_plans": body["episodePlans"], "updated": now,
-        }).eq("id", pid).execute()
+        })
     else:
         raise HTTPException(400, f"未知 field: {field}")
     return {"ok": True}
@@ -510,7 +770,7 @@ async def project_patch(pid: str, req: Request):
 
 @app.delete("/api/project/{pid}")
 async def project_delete(pid: str):
-    db.table("projects").delete().eq("id", pid).execute()
+    _project_delete(pid)
     return {"ok": True}
 
 
@@ -567,6 +827,69 @@ def _extract_json_array(raw: str) -> list:
         return []
 
 
+def _role_prompt_label(role: str) -> str:
+    role = (role or "").strip().lower()
+    if role in {"protagonist", "主角", "男主", "女主", "正派"}:
+        return "正派核心角色"
+    if role in {"antagonist", "反派", "敌人"}:
+        return "反派/对立阵营角色"
+    return "配角/功能性角色"
+
+
+def _character_image_prompt_payload(character: dict, worldbuilding: str = "", project_title: str = "") -> dict:
+    name = character.get("name") or "未命名"
+    role = character.get("role") or ""
+    role_label = _role_prompt_label(role)
+    personality = character.get("personality") or ""
+    if isinstance(personality, list):
+        personality = "、".join(str(x) for x in personality if x)
+    prompt = f"""请为以下角色生成一条专属 AI 绘图提示词，用于生成“角色设定图”。只输出 JSON 对象。
+
+【作品名】
+{project_title or "未命名"}
+
+【世界观】
+{(worldbuilding or "")[:1200]}
+
+【角色信息】
+姓名：{name}
+阵营/定位：{role_label}（原始 role：{role}）
+年龄：{character.get("age") or ""}
+外貌：{character.get("appearance") or ""}
+性格：{personality}
+小传：{character.get("biography") or character.get("background") or ""}
+
+输出格式：
+{{"genPrompt": "完整提示词"}}
+
+要求：
+- genPrompt 开头必须是：角色「{name}」。
+- 必须根据阵营/定位做差异化设计：
+  - 正派核心角色：更强调信念感、主角辨识度、清澈或坚毅的眼神、英雄式轮廓、明亮但不单调的主色。
+  - 反派/对立阵营角色：更强调压迫感、危险气质、权力符号、阴影与冷色/暗金/血色等色彩策略，但不要脸谱化。
+  - 配角/功能性角色：更强调职业功能、身份工具、生活痕迹、辅助叙事的剪影与道具。
+- 必须补全具体外貌差异：发型发色、眼睛、服装材质、体型、标志性道具、配色、背景场景。
+- 必须贴合世界观题材，不要使用空泛词堆砌。
+- 必须包含“全身多角度展示、头部特写、服饰/道具拆解、高清面料纹理、影视概念美术设定图”等设定图要素。
+- 不要保留方括号，不要写解释，不要输出 markdown。"""
+
+    resp = client.chat.completions.create(
+        model=MODEL,
+        max_tokens=900,
+        temperature=0.75,
+        stream=False,
+        messages=[
+            {"role": "system", "content": "你是影视概念美术总监，擅长根据角色阵营与故事功能生成差异化角色设定图提示词。只输出 JSON。"},
+            {"role": "user", "content": prompt},
+        ],
+    )
+    data = _clean_json_obj(resp.choices[0].message.content or "")
+    gen_prompt = str(data.get("genPrompt") or "").strip()
+    if not gen_prompt:
+        raise HTTPException(500, "角色图提示词生成失败")
+    return {"genPrompt": gen_prompt}
+
+
 @app.post("/api/project/{pid}/extract-characters")
 async def extract_characters(pid: str, req: Request):
     body = await req.json()
@@ -584,6 +907,17 @@ async def extract_characters(pid: str, req: Request):
     if not characters:
         raise HTTPException(status_code=500, detail="角色提取返回空列表，请重试")
     return JSONResponse(characters)
+
+
+@app.post("/api/project/{pid}/character-image-prompt")
+async def generate_character_image_prompt(pid: str, req: Request):
+    body = await req.json()
+    character = body.get("character") or {}
+    if not character.get("name"):
+        raise HTTPException(400, "缺少角色信息")
+    worldbuilding = body.get("worldbuilding", "")
+    project_title = body.get("projectTitle", "")
+    return JSONResponse(_character_image_prompt_payload(character, worldbuilding, project_title))
 
 
 @app.post("/api/project/{pid}/reextract-character")
@@ -631,11 +965,7 @@ async def upload_character_image(pid: str, cid: str, file: UploadFile = File(...
     img_id = str(int(_time.time() * 1000))
     data = await file.read()
     path = f"{pid}/{cid}_{img_id}.webp"
-    db.storage.from_("character-images").upload(
-        path, data,
-        file_options={"content-type": "image/webp", "upsert": "false"},
-    )
-    url = db.storage.from_("character-images").get_public_url(path)
+    url = _storage_upload(path, data, file.content_type or "image/webp")
     _db_add_char_image(pid, cid, img_id, url)
     return {"url": url, "imgId": img_id}
 
@@ -684,11 +1014,7 @@ async def generate_character_image(pid: str, cid: str, req: Request):
             import time as _time
             img_id = str(int(_time.time() * 1000))
             path = f"{pid}/{cid}_{img_id}.webp"
-            db.storage.from_("character-images").upload(
-                path, img_data,
-                file_options={"content-type": "image/webp", "upsert": "false"},
-            )
-            public_url = db.storage.from_("character-images").get_public_url(path)
+            public_url = _storage_upload(path, img_data, "image/webp")
             _db_add_char_image(pid, cid, img_id, public_url)
         except Exception as e:
             print(f"[char-image] 生成失败 {key}: {e}")
@@ -703,8 +1029,12 @@ async def generate_character_image(pid: str, cid: str, req: Request):
 @app.get("/api/project/{pid}/char-images")
 async def char_images_status(pid: str):
     """供前端轮询：哪些角色正在生成图，以及各角色最新的图片列表（已写入 DB 的）。"""
-    res = db.table("projects").select("characters").eq("id", pid).maybe_single().execute()
-    chars = (res.data or {}).get("characters") if res and res.data else []
+    try:
+        row = _project_get(pid, "characters")
+        chars = (row or {}).get("characters") if row else []
+    except Exception as e:
+        print(f"[db] 角色图状态加载失败 {pid}: {e}")
+        chars = []
     out = [{"id": c.get("id"), "images": c.get("images") or []} for c in (chars or [])]
     prefix = f"{pid}:"
     pending = [k.split(":", 1)[1] for k in PENDING_CHAR_IMG if k.startswith(prefix)]
@@ -715,11 +1045,118 @@ async def char_images_status(pid: str):
 async def delete_character_image(pid: str, cid: str, img_id: str):
     path = f"{pid}/{cid}_{img_id}.webp"
     try:
-        db.storage.from_("character-images").remove([path])
+        _storage_remove(path)
     except Exception:
         pass  # best-effort; storage orphans are acceptable
     _db_remove_char_image(pid, cid, img_id)
     return {"ok": True}
+
+
+@app.post("/api/project/{pid}/episodes/{ep_num}/generate-storyboard-image")
+async def generate_storyboard_image(pid: str, ep_num: int, req: Request):
+    body = await req.json()
+    model = body.get("model", "wan2.7-image-pro")
+    count = max(1, min(int(body.get("count") or 1), 4))
+    custom_prompt = (body.get("prompt") or "").strip()
+    title = (body.get("title") or "").strip()
+    goal = (body.get("goal") or "").strip()
+    conflict = (body.get("conflict") or "").strip()
+    hook = (body.get("hook") or "").strip()
+    script_content = (body.get("scriptContent") or "").strip()
+    worldbuilding = (body.get("worldbuilding") or "").strip()
+    characters = (body.get("characters") or "").strip()
+
+    if custom_prompt:
+        prompt_text = custom_prompt
+    else:
+        script_excerpt = script_content[:900] + ("…" if len(script_content) > 900 else "")
+        prompt_text = f"""第{ep_num}集《{title or '未命名'}》分镜图，横版电影分镜设计稿，6格关键镜头连续画面。
+本集目标：{goal}
+主要冲突：{conflict}
+结尾钩子：{hook}
+世界观：{worldbuilding[:700]}
+主要角色：{characters[:900]}
+正文片段：{script_excerpt}
+要求：每格构图清晰，镜头语言明确，包含景别变化、人物走位、动作瞬间、光影氛围和场景调度；统一角色外貌与服装，写实影视概念设计，专业 storyboard sheet，cinematic lighting，高细节，横向构图，不要水印，不要乱码文字。"""
+
+    started = []
+
+    async def _run_one(task_id: str):
+        key = f"{pid}:{ep_num}:{task_id}"
+        try:
+            img_data = await _image_bytes_from_prompt(model, prompt_text, size="1536*1024")
+            path = f"{pid}/storyboards/ep{ep_num}_{task_id}.webp"
+            public_url = _storage_upload(path, img_data, "image/webp")
+            _db_add_storyboard_image(pid, ep_num, task_id, public_url)
+        except Exception as e:
+            print(f"[storyboard-image] 生成失败 {key}: {e}")
+        finally:
+            PENDING_STORYBOARD_IMG.discard(key)
+
+    import time as _time
+    for i in range(count):
+        task_id = f"{int(_time.time() * 1000)}_{i}"
+        key = f"{pid}:{ep_num}:{task_id}"
+        PENDING_STORYBOARD_IMG.add(key)
+        started.append(task_id)
+        _spawn_bg(_run_one(task_id))
+
+    return {"status": "started", "count": len(started), "imageIds": started}
+
+
+@app.get("/api/project/{pid}/storyboard-images")
+async def storyboard_images_status(pid: str):
+    """供前端轮询：哪些集正在生成分镜图，以及各集最新图片列表。"""
+    try:
+        row = _project_get(pid, "episode_plans")
+        plans = (row or {}).get("episode_plans") if row else {}
+    except Exception as e:
+        print(f"[db] 分镜图状态加载失败 {pid}: {e}")
+        plans = {}
+    episodes = []
+    for key, plan in (plans or {}).items():
+        try:
+            num = int(key)
+        except (TypeError, ValueError):
+            continue
+        episodes.append({
+            "episodeNumber": num,
+            "storyboardImages": plan.get("storyboardImages") or [],
+        })
+
+    prefix = f"{pid}:"
+    pending_counts = {}
+    for key in PENDING_STORYBOARD_IMG:
+        if not key.startswith(prefix):
+            continue
+        parts = key.split(":")
+        if len(parts) < 3:
+            continue
+        pending_counts[parts[1]] = pending_counts.get(parts[1], 0) + 1
+    pending = sorted((int(k) for k in pending_counts), key=int)
+    return {"pending": pending, "pendingCounts": pending_counts, "episodes": episodes}
+
+
+@app.delete("/api/project/{pid}/episodes/{ep_num}/storyboard-images/{img_id}")
+async def delete_storyboard_image(pid: str, ep_num: int, img_id: str):
+    path = f"{pid}/storyboards/ep{ep_num}_{img_id}.webp"
+    try:
+        _storage_remove(path)
+    except Exception:
+        pass
+    _db_remove_storyboard_image(pid, ep_num, img_id)
+    return {"ok": True}
+
+
+@app.post("/api/project/{pid}/episodes/{ep_num}/upload-storyboard-image")
+async def upload_storyboard_image(pid: str, ep_num: int, file: UploadFile = File(...)):
+    import time as _time
+    img_id = str(int(_time.time() * 1000))
+    data = await file.read()
+    path = f"{pid}/storyboards/ep{ep_num}_{img_id}.webp"
+    url = _storage_upload(path, data, file.content_type or "image/webp")
+    _db_add_storyboard_image(pid, ep_num, img_id, url)
+    return {"url": url, "imgId": img_id}
 
 
 # ── Book title & cover ────────────────────────────────────────────────────────
@@ -764,12 +1201,15 @@ async def generate_book_title(pid: str, req: Request):
     book_title   = str(data.get("bookTitle", "")).strip()[:8]
     cover_prompt = str(data.get("coverPrompt", "")).strip()
 
-    now = datetime.now().strftime("%Y-%m-%d %H:%M")
-    db.table("projects").update({
-        "book_title":   book_title,
-        "cover_prompt": cover_prompt,
-        "updated":      now,
-    }).eq("id", pid).execute()
+    try:
+        now = datetime.now().strftime("%Y-%m-%d %H:%M")
+        _project_update(pid, {
+            "book_title":   book_title,
+            "cover_prompt": cover_prompt,
+            "updated":      now,
+        })
+    except Exception:
+        pass
 
     return {"bookTitle": book_title, "coverPrompt": cover_prompt}
 
@@ -811,7 +1251,7 @@ async def generate_cover_prompt(pid: str):
 
     try:
         now = datetime.now().strftime("%Y-%m-%d %H:%M")
-        db.table("projects").update({"cover_prompt": cover_prompt, "updated": now}).eq("id", pid).execute()
+        _project_update(pid, {"cover_prompt": cover_prompt, "updated": now})
     except Exception:
         pass  # 写库失败不影响返回，提示词主要给前端用
 
@@ -858,18 +1298,36 @@ async def generate_project_cover(pid: str, req: Request):
 
     img_id = str(int(_time.time() * 1000))
     path = f"{pid}/cover_{img_id}.webp"
-    db.storage.from_("character-images").upload(
-        path, img_data,
-        file_options={"content-type": "image/webp", "upsert": "false"},
-    )
-    public_url = db.storage.from_("character-images").get_public_url(path)
+    public_url = _storage_upload(path, img_data, "image/webp")
 
-    now = datetime.now().strftime("%Y-%m-%d %H:%M")
-    db.table("projects").update({
-        "cover_image_url": public_url,
-        "updated":         now,
-    }).eq("id", pid).execute()
+    try:
+        now = datetime.now().strftime("%Y-%m-%d %H:%M")
+        _project_update(pid, {
+            "cover_image_url": public_url,
+            "cover_prompt":    cover_prompt,
+            "updated":         now,
+        })
+    except Exception:
+        pass
 
+    return {"coverImageUrl": public_url}
+
+
+@app.post("/api/project/{pid}/upload-cover")
+async def upload_project_cover(pid: str, file: UploadFile = File(...)):
+    import time as _time
+    img_id = str(int(_time.time() * 1000))
+    data = await file.read()
+    path = f"{pid}/cover_upload_{img_id}.webp"
+    public_url = _storage_upload(path, data, file.content_type or "image/webp")
+    try:
+        now = datetime.now().strftime("%Y-%m-%d %H:%M")
+        _project_update(pid, {
+            "cover_image_url": public_url,
+            "updated":         now,
+        })
+    except Exception:
+        pass
     return {"coverImageUrl": public_url}
 
 

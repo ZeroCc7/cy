@@ -417,8 +417,8 @@ h3 {
 }
 
 .cover {
-  aspect-ratio: 3 / 4;
-  background: linear-gradient(150deg, #138c2c 0%, #09655f 100%);
+  aspect-ratio: 5 / 7;
+  background: #090d11;
   position: relative;
   display: grid;
   place-items: center;
@@ -427,14 +427,15 @@ h3 {
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
 }
 
-/* AI 封面图铺满 */
+/* 小说封面按原比例完整显示，避免裁切或挤压 */
 .cover-img {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
   z-index: 1;
+  background: #090d11;
 }
 
 /* 无封面图时的竖排书名 */
@@ -475,6 +476,7 @@ h3 {
   bottom: 0;
   z-index: 4;
   display: flex;
+  flex-wrap: wrap;
   gap: 6px;
   padding: 8px;
   background: linear-gradient(to top, rgba(0, 0, 0, 0.82), transparent);
@@ -489,7 +491,7 @@ h3 {
 }
 
 .cover-mini-btn {
-  flex: 1;
+  flex: 1 1 calc(50% - 6px);
   font-size: 11px;
   padding: 4px 6px;
   border-radius: 6px;
@@ -499,6 +501,13 @@ h3 {
   cursor: pointer;
   backdrop-filter: blur(2px);
   transition: background 0.15s, border-color 0.15s;
+}
+
+.cover-upload-label {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
 }
 
 .cover-mini-btn:hover {
@@ -645,18 +654,32 @@ h3 {
 }
 
 .back-button {
-  width: 30px;
-  height: 30px;
+  width: 34px;
+  height: 34px;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  color: var(--text-soft);
-  font-size: 24px;
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 auto;
+  background: rgba(22, 25, 30, 0.92);
+  border: 1px solid rgba(200, 179, 106, 0.32);
+  color: #f1d883;
+  font-size: 26px;
+  line-height: 1;
+  font-weight: 500;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.08), 0 10px 24px rgba(0,0,0,0.22);
+  transition: transform 0.14s ease, background 0.14s ease, border-color 0.14s ease, color 0.14s ease;
+}
+
+.back-button:hover {
+  transform: translateX(-1px);
+  background: rgba(36, 41, 50, 0.95);
+  border-color: rgba(241, 216, 131, 0.58);
+  color: #fff0aa;
 }
 
 .work-title {
-  border-left: 1px solid rgba(255, 255, 255, 0.16);
-  padding-left: 12px;
+  border-left: 1px solid rgba(255, 255, 255, 0.12);
+  padding-left: 14px;
 }
 
 .kicker {
@@ -1695,7 +1718,8 @@ img.chat-avatar.ai-av {
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  max-height: 380px;   /* 整张卡片高度封顶，底部「编辑」按钮始终可见 */
+  min-height: 236px;
+  max-height: 440px;
 }
 
 .char-card-body {
@@ -1708,21 +1732,27 @@ img.chat-avatar.ai-av {
 
 /* 左侧图片列 */
 .char-img-col {
-  width: 160px;
+  width: 176px;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
   background: rgba(0,0,0,0.2);
   border-right: 1px solid rgba(255,255,255,0.07);
+  min-height: 0;
 }
 
 .char-img-main {
-  width: 100%;
-  height: 220px;
+  width: calc(100% - 20px);
+  aspect-ratio: 3 / 4;
+  height: auto;
+  margin: 10px 10px 0;
   flex-shrink: 0;
-  object-fit: cover;
-  object-position: top center;
+  object-fit: contain;
+  object-position: center;
   display: block;
+  border-radius: 6px;
+  background: rgba(0,0,0,0.28);
+  border: 1px solid rgba(255,255,255,0.08);
 }
 .char-img-main.is-placeholder {
   display: flex;
@@ -1744,7 +1774,11 @@ img.chat-avatar.ai-av {
   display: flex;
   gap: 4px;
   padding: 6px;
+  margin: 0 4px 4px;
+  min-height: 46px;
+  max-height: 50px;
   overflow-x: auto;
+  overflow-y: hidden;
   background: rgba(0,0,0,0.15);
 }
 .char-thumb-wrap {
@@ -1842,13 +1876,21 @@ img.chat-avatar.ai-av {
 .char-field-value { font-size: 13px; line-height: 1.6; margin: 0; white-space: pre-wrap; color: #d1d5db; }
 
 .char-card-footer {
-  padding: 8px 12px;
+  padding: 8px 10px;
   border-top: 1px solid rgba(255,255,255,0.07);
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 6px;
   justify-content: flex-end;
   flex-shrink: 0;
+  background: rgba(10, 12, 15, 0.38);
+}
+
+.char-card-footer .ghost-button,
+.char-card-footer .char-upload-label {
+  min-height: 28px;
+  padding: 0 9px;
 }
 
 /* ── 角色 AI 背景对话（在 modal 内） ── */
@@ -1912,12 +1954,15 @@ img.chat-avatar.ai-av {
 .gen-prompt-label {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
 }
 .gen-prompt-btn {
-  margin-left: auto;
   font-size: 11px;
   padding: 3px 10px;
+}
+.gen-prompt-label .gen-prompt-btn:first-of-type {
+  margin-left: auto;
 }
 .gen-prompt-btn:disabled {
   opacity: 0.6;
@@ -2042,6 +2087,30 @@ img.chat-avatar.ai-av {
 .role-chip.hot {
   background: rgba(255, 182, 72, 0.95);
   color: #1c1204;
+}
+
+.plan-batch-bar {
+  margin-top: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.plan-batch-bar p {
+  margin: 4px 0 0;
+  font-size: 12px;
+}
+
+.plan-batch-controls,
+.plan-batch-input {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.plan-batch-input .small-input {
+  width: 74px;
 }
 
 .planning-layout {
@@ -2191,6 +2260,12 @@ img.chat-avatar.ai-av {
 }
 .script-editor-textarea:focus { border-color: rgba(39,228,242,0.2); }
 
+.ep-storyboard-tab {
+  height: 100%;
+  min-height: 0;
+  overflow-y: auto;
+}
+
 /* ── 集卡片状态点 ── */
 .ep-status-dots { display: flex; gap: 3px; margin-left: auto; }
 .ep-dot {
@@ -2203,6 +2278,7 @@ img.chat-avatar.ai-av {
 }
 .ep-dot.on { background: rgba(39,228,242,0.15); color: #27e4f2; border-color: rgba(39,228,242,0.3); }
 .ep-dot.summary.on { background: rgba(168,85,247,0.15); color: #a855f7; border-color: rgba(168,85,247,0.3); }
+.ep-dot.storyboard.on { background: rgba(250,204,21,0.16); color: #facc15; border-color: rgba(250,204,21,0.34); }
 
 /* ── 本集摘要栏 ── */
 .ep-summary-bar {
@@ -2272,6 +2348,123 @@ img.chat-avatar.ai-av {
 }
 .ep-detail-panel input  { height: 38px; padding: 0 10px; }
 .ep-detail-panel textarea { min-height: 80px; padding: 10px; }
+
+.storyboard-panel {
+  margin-top: 4px;
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(255,255,255,0.08);
+  background: rgba(0,0,0,0.14);
+}
+
+.storyboard-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.storyboard-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.storyboard-upload-label {
+  cursor: pointer;
+  text-align: center;
+}
+
+.storyboard-head h4 {
+  margin: 0 0 2px;
+  font-size: 13px;
+}
+
+.storyboard-actions .ghost-button {
+  flex: 0 0 auto;
+  font-size: 12px;
+  padding: 5px 10px;
+}
+
+.storyboard-main {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border-radius: 8px;
+  border: 1px solid rgba(255,255,255,0.1);
+  background: rgba(0,0,0,0.18);
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  color: rgba(255,255,255,0.62);
+  font-size: 13px;
+  object-fit: cover;
+}
+
+.storyboard-main.is-loading {
+  gap: 8px;
+}
+
+.storyboard-main.is-placeholder span {
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: rgba(255,255,255,0.06);
+}
+
+.storyboard-thumbs {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(52px, 1fr));
+  gap: 8px;
+}
+
+.storyboard-thumb-wrap {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  border-radius: 6px;
+}
+
+.storyboard-thumb {
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  overflow: hidden;
+  border-radius: 6px;
+  border: 2px solid transparent;
+  background: rgba(255,255,255,0.06);
+}
+
+.storyboard-thumb-wrap.active .storyboard-thumb {
+  border-color: #c8b36a;
+}
+
+.storyboard-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.storyboard-thumb-del {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border-radius: 50%;
+  background: rgba(239,68,68,0.9);
+  color: #fff;
+  font-size: 12px;
+  line-height: 18px;
+  display: none;
+}
+
+.storyboard-thumb-wrap:hover .storyboard-thumb-del {
+  display: block;
+}
 
 .detail-form { display: grid; gap: 16px; }
 .detail-form input   { height: 42px; padding: 0 12px; }

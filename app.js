@@ -36,6 +36,7 @@ loadProjectsFromServer().then((serverScripts) => {
   state._serverLoading = false;
   if (serverScripts === null) {
     state._serverError = true;
+    state._dbUnavailable = false;
   } else {
     state._serverError = false;
     state.scripts = serverScripts;
@@ -54,23 +55,21 @@ loadProjectsFromServer().then((serverScripts) => {
 }).catch(() => {
   state._serverLoading = false;
   state._serverError = true;
+  state._dbUnavailable = false;
   render();
 });
 
 app.addEventListener("click", onClick);
 app.addEventListener("input", onInput);
-app.addEventListener("change", onInput);
+app.addEventListener("change", (e) => {
+  onInput(e);
+  handleImageUploadChange(e);
+});
 app.addEventListener("keydown", onKeyDown);
 portal.addEventListener("input", onInput);
 portal.addEventListener("change", (e) => {
   onInput(e);
-  if (e.target.dataset.action === "upload-char-image") {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const script = activeScript();
-    const char = script?.characters.find((c) => c.id === e.target.dataset.charId);
-    if (char && script) uploadCharImage(script, char, file).catch(() => toast("上传失败，请重试。"));
-  }
+  handleImageUploadChange(e);
 });
 document.addEventListener("mouseup", captureSelection);
 document.addEventListener("keyup", captureSelection);
@@ -143,10 +142,12 @@ function normalizeState(raw) {
       if (c._bgRefineReady === undefined) c._bgRefineReady = false;
     });
     (s.episodes || []).forEach((e) => {
+      if (!e.storyboardImages) e.storyboardImages = [];
       if (!e.epConversation) e.epConversation = [];
       if (e._epRefineReady === undefined) e._epRefineReady = false;
       if (!e.scriptConversation) e.scriptConversation = [];
       if (e._scriptRefineReady === undefined) e._scriptRefineReady = false;
+      if (e._storyboardGenerating === undefined) e._storyboardGenerating = false;
     });
     if (s.currentStep > 5) s.currentStep = 5;
     let max = 1;
@@ -209,6 +210,7 @@ function makeDemoScript() {
     storyPositioning: {
       workType: "短剧",
       episodeCount: 50,
+      planBatchCount: 50,
       audience: ["男频"],
       genres: ["仙侠"],
       coreElements: ["重生"],
@@ -334,6 +336,9 @@ function makeEpisode(num, title, goal, conflict, hook) {
     hook,
     scriptContent: "",
     summary: "",
+    storyboardImages: [],
+    _activeStoryboardIdx: 0,
+    _storyboardGenerating: false,
     versions: [],
     alternateVersions: [],
     needsUpdate: false,
@@ -359,6 +364,7 @@ function createBlankScript() {
     storyPositioning: {
       workType: "短剧",
       episodeCount: 10,
+      planBatchCount: 10,
       audience: ["男频"],
       genres: [],
       coreElements: [],
@@ -475,6 +481,7 @@ function renderBookCard(script) {
         <div class="cover-hover-actions">
           <button class="cover-mini-btn" type="button" data-action="gen-book-title" data-id="${script.id}"${isTitleGen ? " disabled" : ""}>${isTitleGen ? "生成中…" : "✦ 书名"}</button>
           <button class="cover-mini-btn" type="button" data-action="gen-book-cover" data-id="${script.id}"${isCoverGen ? " disabled" : ""}>✦ 封面</button>
+          <label class="cover-mini-btn cover-upload-label">↑ 上传<input type="file" accept="image/*" data-action="upload-cover-image" data-id="${script.id}" style="display:none"></label>
         </div>
       </div>
       <div class="card-body">
@@ -516,7 +523,7 @@ function renderWorkspace() {
   if (!script) return "";
   return `
     <section class="workbar">
-      <button class="back-button" type="button" data-action="back-list" aria-label="返回">‹</button>
+      <button class="back-button" type="button" data-action="back-list" aria-label="返回剧本列表" title="返回剧本列表">‹</button>
       <div class="work-title">
         <div class="kicker">SCRIPT STUDIO</div>
         <h2>${script.name ? escapeHtml(script.name) : "请输入作品标题"}</h2>
@@ -1006,7 +1013,7 @@ function renderStepFour(script) {
     `;
   }
   return `
-    ${renderStepHead(4, "搭建角色关系", "角色小传可以就地编辑，后续会作为生成依据。", `<button class="primary-button" type="button" data-action="confirm-characters">✳ 确认角色，生成分集</button>`)}
+    ${renderStepHead(4, "搭建角色关系", "角色小传可以就地编辑，后续会作为生成依据。", `<button class="primary-button" type="button" data-action="confirm-characters">✳ 确认角色，进入分集规划</button>`)}
     <section class="panel panel-pad characters-panel">
       <div class="panel-head">
         <div class="title-row"><h3>角色设定</h3><span class="muted">共 ${script.characters.length} 位角色</span></div>
@@ -1186,9 +1193,11 @@ function renderStepFive(script) {
   const planDone   = script.episodes.filter((e) => e.goal || e.conflict || e.hook).length;
   const scriptDone = script.episodes.filter((e) => e.scriptContent).length;
   const total = script.episodes.length;
+  const batchBar = renderEpisodePlanBatchBar(script, total, planDone);
 
   return `
     ${renderStepHead(5, "逐集创作", `${total} 集 · 已规划 ${planDone} · 已写稿 ${scriptDone}`)}
+    ${batchBar}
     <div class="planning-layout">
       <div class="episode-list panel panel-pad">
         ${script.episodes.map((ep) => renderEpisodeCard(ep)).join("")}
@@ -1201,12 +1210,50 @@ function renderStepFive(script) {
     </div>`;
 }
 
+function renderEpisodePlanBatchBar(script, total, planDone) {
+  const storyTotal = Math.max(1, Number(script.storyPositioning?.episodeCount) || total || 10);
+  const batchMax = Math.min(storyTotal, 100);
+  const current = Math.max(1, Math.min(Number(script.storyPositioning?.planBatchCount) || batchMax, batchMax));
+  const busy = state.generation?.active;
+  const isPlanning = state.generation?.active && state.generation.kind === "episodes";
+  return `
+    <section class="plan-batch-bar panel panel-pad ${isPlanning ? "is-planning" : ""}">
+      <div>
+        <div class="field-title">分集规划生成</div>
+        <p class="muted">本次只生成前 N 集规划，不生成正文。作品总集数：${storyTotal}，已规划：${planDone}</p>
+      </div>
+      ${isPlanning ? `
+        <div class="plan-writing-loader" aria-live="polite">
+          <div class="writer-figure" aria-hidden="true">
+            <span class="writer-head"></span>
+            <span class="writer-body"></span>
+            <span class="writer-arm"></span>
+            <span class="writer-pen"></span>
+            <span class="writer-page"><i></i><i></i><i></i></span>
+          </div>
+          <div>
+            <strong>规划师正在写分集</strong>
+            <span>${escapeHtml(state.generation.text || `正在生成前 ${current} 集规划…`)}</span>
+          </div>
+        </div>` : ""}
+      <div class="plan-batch-controls">
+        <label class="plan-batch-input">
+          <span class="muted">本次生成</span>
+          <input class="small-input" type="number" min="1" max="${batchMax}" data-bind="storyPositioning.planBatchCount" value="${escapeAttr(current)}" />
+          <span class="muted">集规划</span>
+        </label>
+        <button class="primary-button" type="button" data-action="generate-episodes" ${busy ? "disabled" : ""}>${isPlanning ? "生成中…" : "生成规划"}</button>
+      </div>
+    </section>`;
+}
+
 function renderEpisodeCard(ep) {
   const isSelected  = state.selectedEpisodeId === ep.id;
   const isGenPlan   = state.generation?.active && state.generation.kind === `gen-ep-${ep.id}`;
   const isGenScript = state.generation?.active && state.generation.kind === "script" && isSelected;
   const hasPlan     = ep.goal || ep.conflict || ep.hook;
   const hasScript   = !!ep.scriptContent;
+  const hasStoryboard = (ep.storyboardImages || []).length > 0;
   return `
     <div class="episode-card ${isSelected ? "active" : ""}" data-action="select-episode" data-id="${ep.id}">
       <div class="ep-card-head">
@@ -1215,6 +1262,7 @@ function renderEpisodeCard(ep) {
           <span class="ep-dot ${hasPlan ? "on" : ""}" title="规划">规</span>
           <span class="ep-dot ${hasScript ? "on" : ""}" title="正文">稿</span>
           <span class="ep-dot ${ep.summary ? "on summary" : ""}" title="${ep.summary ? "已生成摘要" : "暂无摘要"}">摘</span>
+          <span class="ep-dot ${hasStoryboard ? "on storyboard" : ""}" title="${hasStoryboard ? "已有分镜图" : "暂无分镜图"}">图</span>
         </span>
       </div>
       <p class="ep-card-title">${escapeHtml(hasPlan ? ep.title : "未规划")}</p>
@@ -1231,17 +1279,62 @@ function renderEpisodeCard(ep) {
 function renderEpisodeWorkspace(ep, script) {
   const tab  = state.episodeTab || "plan";
   const busy = state.generation?.active;
+  const content = tab === "plan"
+    ? renderEpPlanTab(ep, script, busy)
+    : tab === "storyboard"
+      ? renderEpStoryboardTab(ep)
+      : renderEpScriptTab(ep, script, busy);
   return `
     <div class="ep-workspace">
       <div class="ep-tab-bar">
         <button class="ep-tab ${tab === "plan" ? "active" : ""}" type="button" data-action="switch-ep-tab" data-tab="plan">📋 分集规划</button>
+        <button class="ep-tab ${tab === "storyboard" ? "active" : ""}" type="button" data-action="switch-ep-tab" data-tab="storyboard">🎬 分镜图</button>
         <button class="ep-tab ${tab === "script" ? "active" : ""}" type="button" data-action="switch-ep-tab" data-tab="script">✍ 正文创作</button>
         <span class="ep-tab-title muted">第 ${ep.episodeNumber} 集 · ${escapeHtml(ep.title || "未命名")}</span>
       </div>
       <div class="ep-tab-content">
-        ${tab === "plan" ? renderEpPlanTab(ep, script, busy) : renderEpScriptTab(ep, script, busy)}
+        ${content}
       </div>
     </div>`;
+}
+
+function renderStoryboardPanel(ep) {
+  const imgs = ep.storyboardImages || [];
+  const activeIdx = Math.min(ep._activeStoryboardIdx || 0, Math.max(0, imgs.length - 1));
+  const activeImg = imgs[activeIdx];
+  const isGenerating = !!ep._storyboardGenerating;
+  const main = isGenerating
+    ? `<div class="storyboard-main is-loading"><div class="spinner"></div><p class="muted">分镜生成中…</p></div>`
+    : activeImg
+      ? `<img class="storyboard-main clickable" src="${escapeAttr(imgSrc(activeImg.url))}" alt="第${ep.episodeNumber}集分镜图" data-action="preview-image" data-url="${escapeAttr(activeImg.url)}" />`
+      : `<div class="storyboard-main is-placeholder"><span>分镜</span></div>`;
+  const thumbs = imgs.length ? `
+    <div class="storyboard-thumbs">
+      ${imgs.map((img, i) => `
+        <div class="storyboard-thumb-wrap ${i === activeIdx ? "active" : ""}">
+          <button class="storyboard-thumb" type="button" data-action="select-storyboard-img" data-ep-id="${ep.id}" data-idx="${i}"><img src="${escapeAttr(imgSrc(img.url))}" alt="" /></button>
+          <button class="storyboard-thumb-del" type="button" data-action="delete-storyboard-image" data-ep-id="${ep.id}" data-img-id="${escapeAttr(img.id)}" title="删除">×</button>
+        </div>`).join("")}
+    </div>` : "";
+  return `
+    <div class="storyboard-panel">
+      <div class="storyboard-head">
+        <div>
+          <h4>分镜图</h4>
+          <span class="muted">${imgs.length ? `${imgs.length} 张` : "生成本集关键镜头"}</span>
+        </div>
+        <div class="storyboard-actions">
+          <label class="ghost-button storyboard-upload-label">↑ 上传图<input type="file" accept="image/*" data-action="upload-storyboard-image" data-ep-id="${ep.id}" style="display:none"></label>
+          <button class="ghost-button cyan" type="button" data-action="generate-storyboard-image" data-ep-id="${ep.id}"${isGenerating ? " disabled" : ""}>✦ 生成分镜图</button>
+        </div>
+      </div>
+      ${main}
+      ${thumbs}
+    </div>`;
+}
+
+function renderEpStoryboardTab(ep) {
+  return `<div class="ep-storyboard-tab">${renderStoryboardPanel(ep)}</div>`;
 }
 
 function renderEpPlanTab(ep, script, busy) {
@@ -1491,14 +1584,18 @@ function renderModal() {
       </div>`;
   }
   if (modal.type === "gen-image-confirm") {
+    const promptLoading = !!modal.promptLoading;
     return `
       <div class="modal-backdrop">
         <section class="modal modal-gen-image">
           <header class="modal-head"><h3>生成设定图</h3><button class="icon-button" data-action="close-modal">×</button></header>
           <div class="modal-body gen-image-body">
             <div class="gen-image-field">
-              <label class="field-title">提示词<span class="muted">（可直接修改）</span></label>
-              <textarea class="gen-prompt-textarea" data-ui="gen-prompt-input">${escapeHtml(modal.prompt || "")}</textarea>
+              <label class="field-title gen-prompt-label">
+                提示词<span class="muted">（可直接修改）</span>
+                <button class="ghost-button gen-prompt-btn" type="button" data-action="copy-modal-prompt"${promptLoading ? " disabled" : ""}>复制提示词</button>
+              </label>
+              <textarea class="gen-prompt-textarea" data-ui="gen-prompt-input"${promptLoading ? " disabled" : ""}>${escapeHtml(modal.prompt || "")}</textarea>
             </div>
             <div class="gen-image-field">
               <label class="field-title">生成模型</label>
@@ -1511,7 +1608,42 @@ function renderModal() {
           </div>
           <footer class="modal-actions">
             <button class="ghost-button" data-action="close-modal">取消</button>
-            <button class="primary-button" data-action="confirm-gen-image">✦ 开始生成</button>
+            <button class="primary-button" data-action="confirm-gen-image"${promptLoading ? " disabled" : ""}>${promptLoading ? "提示词生成中…" : "✦ 开始生成"}</button>
+          </footer>
+        </section>
+      </div>`;
+  }
+  if (modal.type === "gen-storyboard-confirm") {
+    return `
+      <div class="modal-backdrop">
+        <section class="modal modal-gen-image">
+          <header class="modal-head"><h3>生成分镜图</h3><button class="icon-button" data-action="close-modal">×</button></header>
+          <div class="modal-body gen-image-body">
+            <div class="gen-image-field">
+              <label class="field-title gen-prompt-label">
+                分镜提示词<span class="muted">（可直接修改）</span>
+                <button class="ghost-button gen-prompt-btn" type="button" data-action="copy-modal-prompt">复制提示词</button>
+              </label>
+              <textarea class="gen-prompt-textarea" data-ui="gen-prompt-input">${escapeHtml(modal.prompt || "")}</textarea>
+            </div>
+            <div class="gen-image-field">
+              <label class="field-title">生成模型</label>
+              <select data-ui="gen-model-select" class="small-select" style="width:100%">
+                <option value="wan2.7-image-pro" ${modal.model === "wan2.7-image-pro" ? "selected" : ""}>万象 2.7 Pro（推荐）</option>
+                <option value="wan2.7-image" ${modal.model === "wan2.7-image" ? "selected" : ""}>万象 2.7</option>
+                <option value="gpt-image-2" ${modal.model === "gpt-image-2" ? "selected" : ""}>GPT Image 2</option>
+              </select>
+            </div>
+            <div class="gen-image-field">
+              <label class="field-title">生成张数</label>
+              <select data-ui="gen-count-select" class="small-select" style="width:100%">
+                ${[1, 2, 3, 4].map((n) => `<option value="${n}" ${Number(modal.count || 1) === n ? "selected" : ""}>${n} 张</option>`).join("")}
+              </select>
+            </div>
+          </div>
+          <footer class="modal-actions">
+            <button class="ghost-button" data-action="close-modal">取消</button>
+            <button class="primary-button" data-action="confirm-gen-storyboard">✦ 开始生成</button>
           </footer>
         </section>
       </div>`;
@@ -1525,6 +1657,7 @@ function renderModal() {
             <div class="gen-image-field">
               <label class="field-title gen-prompt-label">
                 封面提示词<span class="muted">（可直接修改）</span>
+                <button class="ghost-button gen-prompt-btn" type="button" data-action="copy-modal-prompt">复制提示词</button>
                 <button class="ghost-button gen-prompt-btn" type="button" data-action="gen-cover-prompt" data-id="${modal.scriptId}">✦ 据世界观生成</button>
               </label>
               <textarea class="gen-prompt-textarea" data-ui="gen-prompt-input">${escapeHtml(modal.prompt || "")}</textarea>
@@ -1620,11 +1753,20 @@ function onClick(event) {
     state.view = "workspace";
     state.modal = null;
     const target = state.scripts.find((s) => s.id === id);
+    if (target && !target._serverLoaded && state._dbUnavailable) {
+      state.selectedEpisodeId = target.episodes?.[0]?.id || "";
+      toast("数据库暂不可用，已打开本地缓存版本。");
+      render();
+      return;
+    }
     if (target && !target._serverLoaded) {
       state._projectLoading = true;
       render();
       fetch(`/api/project/${id}`)
-        .then((r) => r.json())
+        .then((r) => {
+          if (!r.ok) throw new Error(`project-load: ${r.status}`);
+          return r.json();
+        })
         .then((data) => {
           const full = serverProjectToScript(data);
           const idx = state.scripts.findIndex((s) => s.id === id);
@@ -1632,15 +1774,23 @@ function onClick(event) {
           state.selectedEpisodeId = full.episodes?.[0]?.id || "";
           state._projectLoading = false;
           render();
-          // 若刷新前有正在后台生成的角色图，进入项目时自动续上轮询
+          // 若刷新前有正在后台生成的图片，进入项目时自动续上轮询
           startCharImgPolling(full);
+          startStoryboardImgPolling(full);
         })
-        .catch(() => { state._projectLoading = false; render(); });
+        .catch(() => {
+          state._projectLoading = false;
+          toast("项目加载失败，请检查 DATABASE_URL / Postgres 或 Supabase 配置。");
+          render();
+        });
       return;
     }
     state.selectedEpisodeId = target?.episodes?.[0]?.id || "";
     render();
-    if (target) startCharImgPolling(target);
+    if (target) {
+      startCharImgPolling(target);
+      startStoryboardImgPolling(target);
+    }
   }
 
   if (action === "gen-book-title") {
@@ -1669,8 +1819,7 @@ function onClick(event) {
     const id = button.dataset.id;
     const script = state.scripts.find((s) => s.id === id);
     if (!script || script._coverGenerating) return;
-    const defaultPrompt = script.coverPrompt
-      || `${script.bookTitle || script.name}，书籍封面插画，竖版构图，精致细腻`;
+    const defaultPrompt = coverPromptFromScript(script);
     state.modal = { type: "gen-cover-confirm", scriptId: id, prompt: defaultPrompt, model: "wan2.7-image-pro" };
     renderPortal();
   }
@@ -1683,6 +1832,7 @@ function onClick(event) {
     state.modal = null;
     renderPortal();
     if (!script || script._coverGenerating) return;
+    script.coverPrompt = prompt || script.coverPrompt;
     script._coverGenerating = true;
     render();
     fetch(`/api/project/${modal.scriptId}/generate-cover`, {
@@ -1721,6 +1871,11 @@ function onClick(event) {
       .finally(() => { button.disabled = false; button.textContent = origText; });
   }
 
+  if (action === "copy-modal-prompt") {
+    const prompt = document.querySelector('[data-ui="gen-prompt-input"]')?.value || state.modal?.prompt || "";
+    copyText(prompt);
+  }
+
   if (action === "back-list") {
     state.view = "list";
     render();
@@ -1756,11 +1911,13 @@ function onClick(event) {
   if (action === "retry-load") {
     state._serverLoading = true;
     state._serverError = false;
+    state._dbUnavailable = false;
     render();
     loadProjectsFromServer().then((serverScripts) => {
       state._serverLoading = false;
       if (serverScripts === null) {
         state._serverError = true;
+        state._dbUnavailable = false;
       } else {
         state._serverError = false;
         state.scripts = serverScripts;
@@ -1889,7 +2046,7 @@ function onClick(event) {
     script.aiConversation = script.aiConversation || [];
     const pos = script.storyPositioning;
     const parts = [];
-    if (script.name) parts.push(`作品名：${script.name}`);
+    if (script.name) parts.push(`作品需求：${script.name}`);
     if (pos.workType) parts.push(`类型：${pos.workType}`);
     if (pos.episodeCount) parts.push(`集数：${pos.episodeCount} 集`);
     if (pos.audience?.length) parts.push(`受众：${pos.audience.join("、")}`);
@@ -2082,8 +2239,27 @@ function onClick(event) {
     const char = script.characters.find((c) => c.id === button.dataset.charId);
     if (char && !char._imgGenerating) {
       const prevModal = state.modal?.type === "char-edit" ? state.modal : null;
-      state.modal = { type: "gen-image-confirm", charId: char.id, prompt: char._genPrompt || char.appearance || "", model: "wan2.7-image-pro", prevModal };
+      state.modal = { type: "gen-image-confirm", charId: char.id, prompt: "正在根据角色设定生成专属提示词…", model: "wan2.7-image-pro", prevModal, promptLoading: true };
       renderPortal();
+      generateCharacterPrompt(script, char)
+        .then((prompt) => {
+          char._genPrompt = prompt;
+          if (state.modal?.type === "gen-image-confirm" && state.modal.charId === char.id) {
+            state.modal.prompt = prompt;
+            state.modal.promptLoading = false;
+            renderPortal();
+          }
+          persist();
+        })
+        .catch((err) => {
+          console.error("character prompt error:", err);
+          if (state.modal?.type === "gen-image-confirm" && state.modal.charId === char.id) {
+            state.modal.prompt = charPromptFromCharacter(char);
+            state.modal.promptLoading = false;
+            renderPortal();
+          }
+          toast("专属提示词生成失败，已使用当前角色设定。");
+        });
     }
   }
 
@@ -2092,9 +2268,14 @@ function onClick(event) {
     const char = script.characters.find((c) => c.id === modal?.charId);
     const prompt = document.querySelector('[data-ui="gen-prompt-input"]')?.value.trim() || modal?.prompt || "";
     const model = document.querySelector('[data-ui="gen-model-select"]')?.value || modal?.model || "wan2.7-image-pro";
+    if (modal?.promptLoading) {
+      toast("提示词还在生成，请稍等。");
+      return;
+    }
     state.modal = state.modal?.prevModal || null;
     renderPortal();
     if (char) {
+      char._genPrompt = prompt || char._genPrompt || "";
       generateCharImage(script, char, prompt, model).catch((err) => {
         console.error("image gen error:", err);
         toast("图片生成失败，请重试。");
@@ -2108,6 +2289,51 @@ function onClick(event) {
     const char = script.characters.find((c) => c.id === button.dataset.charId);
     if (char) {
       deleteCharImage(script, char, button.dataset.imgId).catch(() => toast("删除失败，请重试。"));
+    }
+  }
+
+  if (action === "select-storyboard-img" && script) {
+    const ep = script.episodes.find((e) => e.id === button.dataset.epId);
+    if (ep) ep._activeStoryboardIdx = Number(button.dataset.idx);
+    render();
+  }
+
+  if (action === "generate-storyboard-image" && script) {
+    const ep = script.episodes.find((e) => e.id === button.dataset.epId);
+    if (ep && !ep._storyboardGenerating) {
+      state.modal = {
+        type: "gen-storyboard-confirm",
+        epId: ep.id,
+        prompt: storyboardPromptFromEpisode(script, ep),
+        model: "wan2.7-image-pro",
+        count: 2,
+      };
+      renderPortal();
+    }
+  }
+
+  if (action === "confirm-gen-storyboard" && script) {
+    const modal = state.modal;
+    const ep = script.episodes.find((e) => e.id === modal?.epId);
+    const prompt = document.querySelector('[data-ui="gen-prompt-input"]')?.value.trim() || modal?.prompt || "";
+    const model = document.querySelector('[data-ui="gen-model-select"]')?.value || modal?.model || "wan2.7-image-pro";
+    const count = Number(document.querySelector('[data-ui="gen-count-select"]')?.value || modal?.count || 1);
+    state.modal = null;
+    renderPortal();
+    if (ep) {
+      generateStoryboardImages(script, ep, prompt, model, count).catch((err) => {
+        console.error("storyboard image gen error:", err);
+        toast("分镜图生成失败，请重试。");
+        ep._storyboardGenerating = false;
+        render();
+      });
+    }
+  }
+
+  if (action === "delete-storyboard-image" && script) {
+    const ep = script.episodes.find((e) => e.id === button.dataset.epId);
+    if (ep) {
+      deleteStoryboardImage(script, ep, button.dataset.imgId).catch(() => toast("删除失败，请重试。"));
     }
   }
 
@@ -2206,13 +2432,22 @@ function onClick(event) {
     });
   }
 
-  if (action === "confirm-characters" || action === "generate-episodes") {
+  if (action === "confirm-characters") {
     if (script) {
       script.currentStep = 5;
       script.maxStep = Math.max(script.maxStep || 1, 5);
     }
     state.episodeTab = "plan";
     render();
+  }
+
+  if (action === "generate-episodes") {
+    if (script && !state.generation?.active) {
+      script.currentStep = 5;
+      script.maxStep = Math.max(script.maxStep || 1, 5);
+      state.episodeTab = "plan";
+      runGeneration("episodes");
+    }
   }
 
   if (action === "select-episode") {
@@ -2356,7 +2591,7 @@ function onInput(event) {
 
   if (target.dataset.bind) {
     setPath(script, target.dataset.bind, target.value);
-    if (target.dataset.bind.startsWith("storyPositioning")) markDownstream(script, 1);
+    if (target.dataset.bind.startsWith("storyPositioning") && target.dataset.bind !== "storyPositioning.planBatchCount") markDownstream(script, 1);
     scheduleSave();
   }
 
@@ -2378,6 +2613,7 @@ function onInput(event) {
     } else {
       character[field] = target.value;
     }
+    character._genPrompt = "";
     markDownstream(script, 3);
     scheduleSave();
   }
@@ -2461,7 +2697,7 @@ async function generateCharImage(script, char, prompt, model = "wan2.7-image-pro
   const res = await fetch(`/api/project/${script.id}/characters/${char.id}/generate-image`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ prompt: prompt || char._genPrompt || char.appearance || char.name, model }),
+    body: JSON.stringify({ prompt: prompt || charPromptFromCharacter(char), model }),
   });
   if (!res.ok) { char._imgGenerating = false; render(); throw new Error(`generate-image: ${res.status}`); }
   // 后端已在后台生成（刷新/离开都不会中断），改为轮询等待结果
@@ -2511,6 +2747,143 @@ function startCharImgPolling(script) {
   tick();
 }
 
+function charPromptFromCharacter(char) {
+  if (!char) return "";
+  const existing = (char._genPrompt || "").trim();
+  if (existing) return existing;
+  const traits = Array.isArray(char.personality) ? char.personality.join("、") : (char.personality || "");
+  return [
+    `角色「${char.name || "未命名"}」`,
+    char.age ? `年龄：${char.age}` : "",
+    char.gender ? `性别：${char.gender}` : "",
+    char.role ? `定位：${char.role}` : "",
+    char.appearance ? `外貌：${char.appearance}` : "",
+    traits ? `性格：${traits}` : "",
+    char.biography ? `小传：${char.biography}` : "",
+    char.background ? `背景：${char.background}` : "",
+    "制作一张高预算院线电影级写实人物设定图，包含全身多角度展示、头部特写、服饰拆解细节、高清面料纹理、专业影视概念美术版式，人体结构精准，比例自然，对焦清晰，8K超高清。",
+  ].filter(Boolean).join("\n");
+}
+
+async function generateCharacterPrompt(script, char) {
+  const res = await fetch(`/api/project/${script.id}/character-image-prompt`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      projectTitle: script.name || script.bookTitle || "",
+      worldbuilding: script.worldbuilding || "",
+      character: {
+        id: char.id,
+        name: char.name,
+        role: char.role,
+        gender: char.gender,
+        age: char.age,
+        appearance: char.appearance,
+        personality: char.personality,
+        biography: char.biography,
+        background: char.background,
+      },
+    }),
+  });
+  if (!res.ok) throw new Error(`character-image-prompt: ${res.status}`);
+  const data = await res.json();
+  return (data.genPrompt || "").trim();
+}
+
+function coverPromptFromScript(script) {
+  if (!script) return "";
+  const existing = (script.coverPrompt || "").trim();
+  if (existing) return existing;
+  const title = script.bookTitle || script.name || "未命名";
+  return `${title}，书籍封面插画，竖版构图，精致细腻，影视级概念美术，高级光影，主体明确，画面层次丰富，适合作品封面。`;
+}
+
+function storyboardPromptFromEpisode(script, ep) {
+  const parts = [
+    `第${ep.episodeNumber}集《${ep.title || "未命名"}》分镜图，横版电影分镜设计稿，6格关键镜头连续画面。`,
+    ep.goal ? `本集目标：${ep.goal}` : "",
+    ep.conflict ? `主要冲突：${ep.conflict}` : "",
+    ep.hook ? `结尾钩子：${ep.hook}` : "",
+    script.worldbuilding ? `世界观：${script.worldbuilding.slice(0, 500)}` : "",
+    buildCharactersText(script) ? `主要角色：${buildCharactersText(script).slice(0, 700)}` : "",
+    ep.scriptContent ? `正文片段：${ep.scriptContent.slice(0, 700)}` : "",
+    "要求：每格构图清晰，镜头语言明确，包含景别变化、人物走位、动作瞬间、光影氛围和场景调度；统一角色外貌与服装，写实影视概念设计，professional storyboard sheet，cinematic lighting，高细节，横向构图，不要水印，不要乱码文字。",
+  ];
+  return parts.filter(Boolean).join("\n");
+}
+
+async function generateStoryboardImages(script, ep, prompt, model = "wan2.7-image-pro", count = 1) {
+  ep._storyboardGenerating = true;
+  render();
+  const res = await fetch(`/api/project/${script.id}/episodes/${ep.episodeNumber}/generate-storyboard-image`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      prompt: prompt || storyboardPromptFromEpisode(script, ep),
+      model,
+      count,
+      title: ep.title || "",
+      goal: ep.goal || "",
+      conflict: ep.conflict || "",
+      hook: ep.hook || "",
+      scriptContent: ep.scriptContent || "",
+      worldbuilding: script.worldbuilding || "",
+      characters: buildCharactersText(script),
+    }),
+  });
+  if (!res.ok) { ep._storyboardGenerating = false; render(); throw new Error(`generate-storyboard-image: ${res.status}`); }
+  startStoryboardImgPolling(script);
+}
+
+let _storyboardImgPollTimer = null;
+
+async function pollStoryboardImagesOnce(script) {
+  try {
+    const res = await fetch(`/api/project/${script.id}/storyboard-images`);
+    if (!res.ok) return false;
+    const data = await res.json();
+    const pendingSet = new Set((data.pending || []).map((item) => String(item)));
+    let changed = false;
+    (data.episodes || []).forEach((item) => {
+      const ep = script.episodes.find((e) => String(e.episodeNumber) === String(item.episodeNumber));
+      if (!ep) return;
+      const newImgs = (item.storyboardImages || []).map((im) => ({ id: im.id, url: im.url }));
+      const oldImgs = ep.storyboardImages || [];
+      const sameImgs = newImgs.length === oldImgs.length
+        && newImgs.every((img, i) => img.id === oldImgs[i]?.id && img.url === oldImgs[i]?.url);
+      if (!sameImgs) {
+        ep.storyboardImages = newImgs;
+        ep._activeStoryboardIdx = Math.max(0, newImgs.length - 1);
+        changed = true;
+      }
+    });
+    (script.episodes || []).forEach((ep) => {
+      const nowGen = pendingSet.has(String(ep.episodeNumber));
+      if (!!ep._storyboardGenerating !== nowGen) {
+        ep._storyboardGenerating = nowGen;
+        changed = true;
+      }
+    });
+    if (changed) { saveLocal(); render(); }
+    return (data.pending || []).length > 0;
+  } catch {
+    return false;
+  }
+}
+
+function startStoryboardImgPolling(script) {
+  if (_storyboardImgPollTimer) return;
+  const tick = async () => {
+    const stillPending = await pollStoryboardImagesOnce(script);
+    if (!stillPending && _storyboardImgPollTimer) {
+      clearInterval(_storyboardImgPollTimer);
+      _storyboardImgPollTimer = null;
+    }
+  };
+  _storyboardImgPollTimer = setInterval(tick, 3000);
+  tick();
+}
+
 async function uploadCharImage(script, char, file) {
   const form = new FormData();
   form.append("file", file);
@@ -2527,10 +2900,84 @@ async function uploadCharImage(script, char, file) {
   render();
 }
 
+async function uploadCoverImage(script, file) {
+  const form = new FormData();
+  form.append("file", file);
+  const res = await fetch(`/api/project/${script.id}/upload-cover`, {
+    method: "POST",
+    body: form,
+  });
+  if (!res.ok) throw new Error(`upload-cover: ${res.status}`);
+  const { coverImageUrl } = await res.json();
+  script.coverImageUrl = coverImageUrl || script.coverImageUrl;
+  persist();
+  render();
+}
+
+async function uploadStoryboardImage(script, ep, file) {
+  const form = new FormData();
+  form.append("file", file);
+  const res = await fetch(`/api/project/${script.id}/episodes/${ep.episodeNumber}/upload-storyboard-image`, {
+    method: "POST",
+    body: form,
+  });
+  if (!res.ok) throw new Error(`upload-storyboard-image: ${res.status}`);
+  const { url, imgId } = await res.json();
+  ep.storyboardImages = ep.storyboardImages || [];
+  ep.storyboardImages.push({ id: imgId, url });
+  ep._activeStoryboardIdx = ep.storyboardImages.length - 1;
+  persist();
+  render();
+}
+
+function handleImageUploadChange(event) {
+  const input = event.target;
+  if (!input?.matches?.('input[type="file"][data-action]')) return;
+  const file = input.files?.[0];
+  const action = input.dataset.action;
+  const script = activeScript();
+  const resetInput = () => { input.value = ""; };
+  if (!file || !script) { resetInput(); return; }
+
+  if (action === "upload-char-image") {
+    const char = script.characters.find((c) => c.id === input.dataset.charId);
+    if (!char) { resetInput(); return; }
+    uploadCharImage(script, char, file)
+      .then(() => toast("角色图已上传。"))
+      .catch((err) => { console.error("char upload error:", err); toast("角色图上传失败，请重试。"); })
+      .finally(resetInput);
+  }
+
+  if (action === "upload-cover-image") {
+    const target = state.scripts.find((s) => s.id === input.dataset.id) || script;
+    uploadCoverImage(target, file)
+      .then(() => toast("封面已上传。"))
+      .catch((err) => { console.error("cover upload error:", err); toast("封面上传失败，请重试。"); })
+      .finally(resetInput);
+  }
+
+  if (action === "upload-storyboard-image") {
+    const ep = script.episodes.find((e) => e.id === input.dataset.epId);
+    if (!ep) { resetInput(); return; }
+    uploadStoryboardImage(script, ep, file)
+      .then(() => toast("分镜图已上传。"))
+      .catch((err) => { console.error("storyboard upload error:", err); toast("分镜图上传失败，请重试。"); })
+      .finally(resetInput);
+  }
+}
+
 async function deleteCharImage(script, char, imgId) {
   await fetch(`/api/project/${script.id}/characters/${char.id}/images/${imgId}`, { method: "DELETE" });
   char.images = (char.images || []).filter((img) => img.id !== imgId);
   char._activeImgIdx = Math.max(0, Math.min(char._activeImgIdx || 0, char.images.length - 1));
+  persist();
+  render();
+}
+
+async function deleteStoryboardImage(script, ep, imgId) {
+  await fetch(`/api/project/${script.id}/episodes/${ep.episodeNumber}/storyboard-images/${imgId}`, { method: "DELETE" });
+  ep.storyboardImages = (ep.storyboardImages || []).filter((img) => img.id !== imgId);
+  ep._activeStoryboardIdx = Math.max(0, Math.min(ep._activeStoryboardIdx || 0, ep.storyboardImages.length - 1));
   persist();
   render();
 }
@@ -3049,9 +3496,12 @@ async function genCharacters(script, runId) {
 async function genEpisodes(script, runId) {
   const plan = selectedPlan(script);
   const outlineText = plan?.content || "";
+  const storyTotal = Math.max(1, Number(script.storyPositioning.episodeCount) || 10);
+  const batchMax = Math.min(storyTotal, 100);
+  const batchCount = Math.max(1, Math.min(Number(script.storyPositioning.planBatchCount) || batchMax, batchMax));
 
   if (runId !== generationRun) return;
-  state.generation.text = "AI 正在拆解分集节奏，规划冲突与钩子…";
+  state.generation.text = `AI 正在生成前 ${batchCount} 集分集规划，不会生成正文…`;
   state.generation.progress = 20;
   render();
 
@@ -3060,7 +3510,7 @@ async function genEpisodes(script, runId) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       outline: outlineText,
-      episodeCount: script.storyPositioning.episodeCount,
+      episodeCount: batchCount,
       worldbuilding: script.worldbuilding || "",
       characters: buildCharactersText(script),
     }),
@@ -3073,6 +3523,7 @@ async function genEpisodes(script, runId) {
 
   const data = await res.json();
   if (runId !== generationRun) return;
+  data.__planBatchCount = batchCount;
   applyGeneratedResult("episodes", script, data);
   state.generation = null;
   persist();
@@ -3383,7 +3834,7 @@ function generationMeta(kind) {
     worldbuilding: { title: "AI 正在构建故事世界观…", subtitle: "设定时代背景、社会规则、地理势力与独特世界法则" },
     "wb-refine-apply": { title: "AI 正在根据讨论重新生成世界观…", subtitle: "结合打磨意见，输出完整优化版世界观" },
     characters: { title: "AI 正在搭建角色关系…", subtitle: "提取主角欲望、反派压力与配角功能，让角色服务剧情推进" },
-    episodes: { title: "AI 正在拆解分集规划…", subtitle: "为每集配置目标、冲突、转折和结尾钩子" },
+    episodes: { title: "AI 正在拆解分集规划…", subtitle: "按本次选择的集数生成规划，不生成正文" },
     script: { title: "AI 正在生成本集正文…", subtitle: "按短剧格式逐字输出场景、动作、对白和转场" },
   };
   return data[kind];
@@ -3501,12 +3952,36 @@ function applyGeneratedResult(kind, script, data) {
   }
   if (kind === "episodes") {
     const count = Math.max(1, Math.min(Number(script.storyPositioning.episodeCount) || 10, 100));
+    const existingByNum = new Map((script.episodes || []).map((episode) => [episode.episodeNumber, episode]));
     script.episodes = Array.from({ length: count }, (_, i) => {
       const num = i + 1;
-      const p = data[String(num)] || {};
-      return makeEpisode(num, p.title || `第${num}集`, p.goal || "", p.conflict || "", p.hook || "");
+      const old = existingByNum.get(num);
+      const p = data[String(num)];
+      const next = makeEpisode(
+        num,
+        p ? (p.title || old?.title || `第${num}集`) : (old?.title || `第${num}集`),
+        p ? (p.goal || "") : (old?.goal || ""),
+        p ? (p.conflict || "") : (old?.conflict || ""),
+        p ? (p.hook || "") : (old?.hook || "")
+      );
+      if (old) {
+        next.id = old.id;
+        next.scriptContent = old.scriptContent || "";
+        next.summary = old.summary || "";
+        next.storyboardImages = old.storyboardImages || [];
+        next._activeStoryboardIdx = old._activeStoryboardIdx || 0;
+        next._storyboardGenerating = !!old._storyboardGenerating;
+        next.versions = old.versions || [];
+        next.alternateVersions = old.alternateVersions || [];
+        next.needsUpdate = p ? !!old.scriptContent : !!old.needsUpdate;
+        next.epConversation = old.epConversation || [];
+        next._epRefineReady = !!old._epRefineReady;
+        next.scriptConversation = old.scriptConversation || [];
+        next._scriptRefineReady = !!old._scriptRefineReady;
+      }
+      return next;
     });
-    state.selectedEpisodeId = script.episodes[0]?.id || "";
+    state.selectedEpisodeId = script.episodes.find((episode) => episode.id === state.selectedEpisodeId)?.id || script.episodes[0]?.id || "";
     script.currentStep = 5;
     script.maxStep = Math.max(script.maxStep || 1, 5);
     updateCompletion(script, 80);
@@ -3672,7 +4147,7 @@ function exportScript() {
   if (!script) return;
   const plan = selectedPlan(script);
   const lines = [
-    `作品名称：${script.name}`,
+    `作品需求：${script.name}`,
     "",
     "一、故事大纲",
     plan?.content || "未生成",
@@ -3790,6 +4265,7 @@ function serverSummaryToScript(row) {
     storyPositioning: {
       workType: "短剧",
       episodeCount: row.episodeCount || 10,
+      planBatchCount: row.episodeCount || 10,
       audience: [],
       genres: [],
       coreElements: [],
@@ -3800,7 +4276,7 @@ function serverSummaryToScript(row) {
     episodes: [],
     aiConversation: [],
     bookTitle: row.bookTitle || "",
-    coverPrompt: "",
+    coverPrompt: row.coverPrompt || "",
     coverImageUrl: row.coverImageUrl || "",
   };
 }
@@ -3860,6 +4336,9 @@ function serverProjectToScript(data) {
     const ep = makeEpisode(num, plan.title || `第${num}集`, plan.goal || "", plan.conflict || "", plan.hook || "");
     ep.scriptContent = content;
     ep.summary = plan.summary || "";
+    ep.storyboardImages = Array.isArray(plan.storyboardImages)
+      ? plan.storyboardImages.map((img) => ({ id: img.id || uid(), url: img.url }))
+      : [];
     if (content) {
       ep.versions = [{ id: `version-${uid()}`, versionNumber: 1, content, savedAt: data.updated || "", type: "AUTO" }];
     }
@@ -3884,6 +4363,7 @@ function serverProjectToScript(data) {
     storyPositioning: {
       workType: "短剧",
       episodeCount: data.episodeCount || 10,
+      planBatchCount: data.episodeCount || 10,
       audience: [],
       genres: [],
       coreElements: [],
@@ -3951,7 +4431,14 @@ function scriptToServerPayload(script) {
     episodePlans: Object.fromEntries(
       (script.episodes || []).map((e) => [
         String(e.episodeNumber),
-        { title: e.title, goal: e.goal, conflict: e.conflict, hook: e.hook, summary: e.summary || "" },
+        {
+          title: e.title,
+          goal: e.goal,
+          conflict: e.conflict,
+          hook: e.hook,
+          summary: e.summary || "",
+          storyboardImages: (e.storyboardImages || []).map((img) => ({ id: img.id, url: img.url })),
+        },
       ])
     ),
   };
@@ -3964,8 +4451,16 @@ async function loadProjectsFromServer() {
       console.error(`[幕启] /api/projects 返回 ${res.status}`);
       return null;
     }
+    const dbUnavailable = res.headers.get("X-DB-Unavailable") === "1";
     const rows = await res.json();
-    if (!Array.isArray(rows) || !rows.length) return null;
+    if (!Array.isArray(rows)) return null;
+    if (dbUnavailable) {
+      state._dbUnavailable = true;
+      console.warn("[幕启] 数据库暂不可用，继续使用本地缓存。");
+      return state.scripts.length ? state.scripts : null;
+    }
+    state._dbUnavailable = false;
+    if (!rows.length) return [];
     return rows.map(serverSummaryToScript);
   } catch (err) {
     console.error("[幕启] fetch /api/projects 异常", err);
@@ -4025,7 +4520,15 @@ function setPath(target, path, value) {
   let node = target;
   for (let i = 0; i < parts.length - 1; i += 1) node = node[parts[i]];
   const key = parts.at(-1);
-  node[key] = key === "episodeCount" ? Number(value) : value;
+  node[key] = ["episodeCount", "planBatchCount"].includes(key) ? Number(value) : value;
+  if (path === "storyPositioning.episodeCount") {
+    const total = Math.min(Math.max(1, Number(node.episodeCount) || 1), 100);
+    node.planBatchCount = Math.max(1, Math.min(Number(node.planBatchCount) || total, total));
+  }
+  if (path === "storyPositioning.planBatchCount") {
+    const total = Math.min(Math.max(1, Number(node.episodeCount) || 1), 100);
+    node.planBatchCount = Math.max(1, Math.min(Number(node.planBatchCount) || total, total));
+  }
 }
 
 function markDownstream(script, fromStep) {
@@ -4130,6 +4633,28 @@ function uid() {
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function copyText(text) {
+  const value = (text || "").trim();
+  if (!value) {
+    toast("暂无可复制的提示词。");
+    return;
+  }
+  try {
+    await navigator.clipboard.writeText(value);
+  } catch {
+    const ta = document.createElement("textarea");
+    ta.value = value;
+    ta.setAttribute("readonly", "");
+    ta.style.position = "fixed";
+    ta.style.left = "-9999px";
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand("copy");
+    ta.remove();
+  }
+  toast("提示词已复制。");
 }
 
 function toast(message) {
